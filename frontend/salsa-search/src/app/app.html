@@ -1,0 +1,61 @@
+<main class="relative text-[#202124]">
+  <google-map
+    width="100%"
+    height="100vh"
+    [center]="center()"
+    [zoom]="zoom()"
+    [options]="{ mapTypeControl: false, fullscreenControl: false }"
+  />
+
+  <!-- Logo in the top-right corner, letters only, with a shadow so they show over the map. -->
+  <h1 class="absolute top-4 right-4 z-10 text-3xl text-shadow-md">
+    <span class="text-[#4285f4]">S</span><span class="text-[#ea4335]">a</span><span class="text-[#fbbc05]">l</span><span class="text-[#4285f4]">s</span><span class="text-[#34a853]">a</span>
+    <span class="text-[#ea4335]">S</span><span class="text-[#4285f4]">e</span><span class="text-[#ea4335]">a</span><span class="text-[#fbbc05]">r</span><span class="text-[#4285f4]">c</span><span class="text-[#34a853]">h</span>
+  </h1>
+
+  <!-- Floats over the top-left corner of the map, like Google Maps. -->
+  <div class="absolute top-4 left-4 z-10">
+    <form
+      (submit)="search($event, query)"
+      class="relative flex w-96 rounded-full bg-white shadow-md"
+    >
+      <input
+        #query
+        type="search"
+        autocomplete="off"
+        (input)="suggest(query)"
+        (keydown.arrowdown)="move(1, $event)"
+        (keydown.arrowup)="move(-1, $event)"
+        (blur)="suggestions.set([])"
+        class="flex-1 px-5 py-3 bg-transparent focus:outline-none"
+      />
+      <button class="flex items-center px-3 cursor-pointer text-gray-500 hover:text-gray-800">
+        <span class="material-symbols-outlined">search</span>
+      </button>
+
+      <!-- Thin divider line, like Google Maps has before its directions icon. -->
+      <span class="w-px h-6 self-center bg-gray-300"></span>
+
+      <!-- I'm Feeling Lucky: the dice button (src/features/dice-button). -->
+      <app-dice-button (click)="feelingLucky(query)" />
+
+      @if (suggestions().length) {
+        <ul class="absolute top-full inset-x-0 z-10 mt-1 py-2 rounded-2xl border border-[#dfe1e5] bg-white shadow-md">
+          @for (prediction of suggestions(); track prediction.placeId; let i = $index) {
+            <li
+              (mousedown)="selectCity(prediction, query)"
+              [class.bg-gray-100]="i === highlighted()"
+              class="px-5 py-2 cursor-pointer hover:bg-gray-100"
+            >
+              {{ prediction.text.text }}
+            </li>
+          }
+        </ul>
+      }
+    </form>
+
+    @if (message()) {
+      <p class="w-fit mt-2 px-3 py-1 rounded bg-white shadow-md text-sm text-red-600">{{ message() }}</p>
+    }
+  </div>
+</main>

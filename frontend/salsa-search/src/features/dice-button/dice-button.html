@@ -1,0 +1,22 @@
+<!-- type="button" so it doesn't submit the search form it sits in. -->
+<button
+  type="button"
+  (mouseenter)="dice.set(randomDice())"
+  title="I'm Feeling Lucky"
+  class="pl-3 pr-4 rounded-r-full cursor-pointer text-[#1a73e8] hover:text-[#174ea6]"
+>
+  <svg viewBox="0 0 24 24" class="size-7 overflow-visible" fill="none" stroke="currentColor" stroke-width="1.8">
+    <g [attr.transform]="`translate(${dice()[0].x} ${dice()[0].y}) rotate(${dice()[0].tilt} 5.5 12) translate(0.5 7)`">
+      <rect width="10" height="10" rx="2" />
+      @for (pip of pips[dice()[0].face]; track $index) {
+        <circle [attr.cx]="pip[0]" [attr.cy]="pip[1]" r="0.9" fill="currentColor" stroke="none" />
+      }
+    </g>
+    <g [attr.transform]="`translate(${dice()[1].x} ${dice()[1].y}) rotate(${dice()[1].tilt} 18.5 12) translate(13.5 7)`">
+      <rect width="10" height="10" rx="2" />
+      @for (pip of pips[dice()[1].face]; track $index) {
+        <circle [attr.cx]="pip[0]" [attr.cy]="pip[1]" r="0.9" fill="currentColor" stroke="none" />
+      }
+    </g>
+  </svg>
+</button>
