@@ -22,7 +22,7 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 |---|---|
 | `LLM_PROVIDER` | `gemini` (default) or `openai` |
 | `GEMINI_API_KEY` | from https://aistudio.google.com/apikey |
-| `GEMINI_MODEL` | default `gemini-flash-latest` (Google's newest Flash) |
+| `GEMINI_MODEL` | default `gemini-3.5-flash-lite` (cheap, pinned). If changed, update the prices in `src/llm.ts` |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | only if `LLM_PROVIDER=openai` |
 | `PORT` | default 3000 |
 
@@ -45,7 +45,7 @@ Sends place details to the LLM in batches of 20 and returns one result per place
 - `offers` is any of `classes`, `socials` (partner dancing) or `music`.
 - Only `id` and `name` are required.
 - "music" (salsa is played) and "socials" (people partner-dance) are kept separate on purpose.
-- **Cost (estimate, not yet measured):** one call of 20 places is about 4k input + 1.5k output tokens. At Gemini 3.8 Flash's listed $0.75 / $3.75 per 1M tokens (introductory price until 2026-12-31), that's about $0.01 per 20 places. "Thinking" tokens on newer models can add more.
+- **Cost:** thinking is set to `minimal`. Each Gemini call logs its tokens and estimated cost to the console, e.g. `[gemini] gemini-3.5-flash-lite: 4000 in, 1500 out, ~$0.00495`. At $0.30 / $2.50 per 1M tokens, 20 places cost about half a cent.
 
 Try it (needs `GEMINI_API_KEY`):
 ```
