@@ -19,9 +19,10 @@ const PLACE_FIELDS = [
   'types',
   'primaryType',
 ];
-const QUERIES = ['salsa classes', 'salsa dance school', 'salsa bar'];
+// Google finds the schools and classes; socials come from SalsaVida (a bar search mostly found bars, not socials).
+const QUERIES = ['salsa classes', 'salsa dance school'];
 
-// Salsa places inside the given area. The 3 queries run at the same time; duplicates are dropped.
+// Salsa places inside the given area. The queries run at the same time; duplicates are dropped.
 // Also returns the area's city: the city most of the found places are in (empty if none found).
 export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ places: Place[]; city: string }> {
   const results = await Promise.all(
