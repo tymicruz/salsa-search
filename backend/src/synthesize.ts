@@ -64,15 +64,26 @@ export async function synthesize(places: RawPlace[], events: RawEvent[]) {
   // Short refs ("p1", "e1") instead of long IDs keep the prompt small and easy to check.
   const placeRefs = new Map(places.map((p, i) => [`p${i + 1}`, p]));
   const eventRefs = new Map(events.map((e, i) => [`e${i + 1}`, e]));
-  const near = nearGroups(places);
 
-  // What the LLM sees: names, types, a "near" hint and event text. No coordinates, no addresses.
+  // Two hints computed by code (refs -> group id):
+  // near = places within NEAR_METERS of each other; nameGroup = rows whose names share a rare, specific word.
+  const placeList = [...placeRefs];
+  const near = groupRows(placeList, ([, a], [, b]) => meters(a, b) <= NEAR_METERS, 'g');
+  const nameRows: [string, string][] = [
+    ...placeList.map(([ref, p]): [string, string] => [ref, p.name]),
+    ...[...eventRefs].map(([ref, e]): [string, string] => [ref, e.venue]),
+  ];
+  const rare = rareWords(nameRows.map(([, name]) => name));
+  const nameGroup = groupRows(nameRows, ([, a], [, b]) => specificWords(a).some((w) => rare.has(w) && specificWords(b).includes(w)), 'n');
+
+  // What the LLM sees: names, types, the two hints and event text. No coordinates, no addresses.
   const input = {
-    places: [...placeRefs].map(([ref, p]) => ({ ref, name: p.name, types: p.types, near: near.get(p.id) })),
+    places: placeList.map(([ref, p]) => ({ ref, name: p.name, types: p.types, near: near.get(ref), nameGroup: nameGroup.get(ref) })),
     events: [...eventRefs].map(([ref, e]) => ({
       ref,
       title: e.title,
       venue: e.venue,
+      nameGroup: nameGroup.get(ref),
       kind: e.kind,
       days: e.days.map((d) => DAY_NAMES[d]),
       time: e.time,
@@ -84,12 +95,16 @@ export async function synthesize(places: RawPlace[], events: RawEvent[]) {
 Never use outside knowledge and never guess.
 
 "places" are Google Maps results. "events" are SalsaVida listings; their "venue" is the place where they happen.
-Places with the same "near" value are within ${NEAR_METERS} m of each other.
+Two hints, computed for you:
+- Places with the same "near" value are within ${NEAR_METERS} m of each other.
+- Rows with the same "nameGroup" share a rare, specific word in their names (e.g. "PM").
+Rows with the same near or nameGroup value are usually the SAME venue: merge them unless the data shows they're
+different (e.g. branches of one school in different neighborhoods, named in the names).
 
-Merge rows that are clearly the SAME physical venue: duplicate Google places, and events whose venue names that place.
+Merge rows that are the SAME physical venue: duplicate Google places, and events whose venue names that place.
 A school or organizer that runs classes or socials at another venue is a "host" of that venue
 (e.g. an event "Flavia's Dance School" at venue "PM" -> host "Flavia's Dance School" at PM).
-If unsure, do NOT merge.
+For rows that share no hint: if unsure, do NOT merge.
 
 For each venue return:
 - name: the clearest name, taken from the input names
@@ -111,7 +126,23 @@ Data:
 ${JSON.stringify(input)}`;
 
   const answer = JSON.parse(await askLLM(prompt));
-  return checkAnswer(answer, placeRefs, eventRefs, near);
+  const { venues, notSalsa, venueOf } = checkAnswer(answer, placeRefs, eventRefs, near);
+
+  // Diagnosis log (counts only): how many hint groups code offered, and how many ended up as one venue.
+  console.log(`[synthesize] hints: near groups ${countMerged(near, venueOf)}, name groups ${countMerged(nameGroup, venueOf)}`);
+  return { venues, notSalsa };
+}
+
+// "3 offered, 2 merged": a group counts as merged when all its rows (not dropped as notSalsa) are in one venue.
+function countMerged(groups: Map<string, string>, venueOf: Map<string, number>): string {
+  const venuesPerGroup = new Map<string, Set<number>>();
+  for (const [ref, group] of groups) {
+    if (!venueOf.has(ref)) continue; // notSalsa
+    if (!venuesPerGroup.has(group)) venuesPerGroup.set(group, new Set());
+    venuesPerGroup.get(group)!.add(venueOf.get(ref)!);
+  }
+  const merged = [...venuesPerGroup.values()].filter((v) => v.size === 1).length;
+  return `${new Set(groups.values()).size} offered, ${merged} merged`;
 }
 
 // ---------- Checking the LLM's answer ----------
@@ -124,6 +155,7 @@ function checkAnswer(
 ) {
   const used = new Set<string>(); // every ref may be used once
   const venues: Venue[] = [];
+  const venueOf = new Map<string, number>(); // ref -> index of the venue it ended up in (for the hints log)
   const dropped = { badRefs: 0, places: 0, events: 0, reattached: 0, quotes: [] as string[] }; // for the log
 
   // An event whose venue name matches a Google place's name (same rule the frontend used before the AI)
@@ -146,7 +178,7 @@ function checkAnswer(
     const okPlaces = myPlaces.filter((r: string, i: number) => {
       if (i === 0) return true;
       const p = placeRefs.get(r)!;
-      const isNear = near.get(p.id) && near.get(p.id) === near.get(first!.id);
+      const isNear = near.has(r) && near.get(r) === near.get(myPlaces[0]);
       return isNear || sameName(p.name, first!.name) || sharesWord(p.name, first!.name);
     });
     // An event bound to a place joins only the venue holding that place (it's re-attached below otherwise).
@@ -167,7 +199,10 @@ function checkAnswer(
     });
     dropped.places += myPlaces.length - okPlaces.length; // these come back below as their own venue
     if (okPlaces.length === 0 && okEvents.length === 0) continue;
-    [...okPlaces, ...okEvents].forEach((r) => used.add(r));
+    for (const r of [...okPlaces, ...okEvents]) {
+      used.add(r);
+      venueOf.set(r, venues.length); // the venue pushed below
+    }
 
     // Evidence quotes must appear word for word in the row they cite.
     const evidence = (v.evidence ?? [])
@@ -205,21 +240,27 @@ function checkAnswer(
   // Nothing vanishes: rows the LLM forgot, or that failed a check, become their own "unknown" venue.
   const empty = { name: '', hosts: [], category: 'unknown', offers: [], summary: '', evidence: [] };
   for (const [ref, place] of placeRefs) {
-    if (!used.has(ref)) venues.push(buildVenue([place], [], empty));
+    if (used.has(ref)) continue;
+    venueOf.set(ref, venues.length);
+    venues.push(buildVenue([place], [], empty));
   }
 
   // Bound events the LLM put elsewhere (or forgot) go to the venue holding their place.
   // (If that place was marked notSalsa, there's no such venue and the event falls through to the leftovers.)
   for (const [eRef, pRef] of boundPlace) {
-    const venue = venues.find((v) => v.placeIds.includes(placeRefs.get(pRef)!.id));
-    if (used.has(eRef) || !venue) continue;
-    venue.schedule.push(toScheduleItem(eventRefs.get(eRef)!));
+    const index = venues.findIndex((v) => v.placeIds.includes(placeRefs.get(pRef)!.id));
+    if (used.has(eRef) || index === -1) continue;
+    venues[index].schedule.push(toScheduleItem(eventRefs.get(eRef)!));
     used.add(eRef);
+    venueOf.set(eRef, index);
   }
 
-  const leftoverEvents = [...eventRefs].filter(([ref]) => !used.has(ref)).map(([, e]) => e);
-  for (const venueName of new Set(leftoverEvents.map((e) => e.venue))) {
-    venues.push(buildVenue([], leftoverEvents.filter((e) => e.venue === venueName), empty));
+  // Leftover events: one SalsaVida-only venue per venue name.
+  const leftoverEvents = [...eventRefs].filter(([ref]) => !used.has(ref));
+  for (const venueName of new Set(leftoverEvents.map(([, e]) => e.venue))) {
+    const rows = leftoverEvents.filter(([, e]) => e.venue === venueName);
+    rows.forEach(([ref]) => venueOf.set(ref, venues.length));
+    venues.push(buildVenue([], rows.map(([, e]) => e), empty));
   }
 
   console.log(
@@ -228,7 +269,7 @@ function checkAnswer(
       `place with their exact venue name, ${dropped.quotes.length} quotes not word for word` +
       (dropped.quotes.length ? ` (${dropped.quotes.map((q) => JSON.stringify(q)).join(', ')})` : ''),
   );
-  return { venues, notSalsa };
+  return { venues, notSalsa, venueOf };
 }
 
 // Puts a venue together. Location, links and schedule are copied from the input rows, never from the LLM.
@@ -252,22 +293,41 @@ function buildVenue(places: RawPlace[], events: RawEvent[], llm: Omit<Venue, 'id
 
 // ---------- Helpers ----------
 
-// Puts places within NEAR_METERS of each other in the same group ("g1", "g2", ...). Lone places get no group.
-function nearGroups(places: RawPlace[]): Map<string, string> {
+// Puts linked rows in the same group ("g1", "g2", ... with the given prefix), keyed by ref. Lone rows get no group.
+// Rows are [ref, value] pairs; linked() says whether two values belong together.
+function groupRows<T>(rows: [string, T][], linked: (a: [string, T], b: [string, T]) => boolean, prefix: string) {
   const groupOf = new Map<string, string>();
   let next = 1;
-  for (const a of places) {
-    for (const b of places) {
-      if (a === b || meters(a, b) > NEAR_METERS) continue;
-      const group = groupOf.get(a.id) ?? groupOf.get(b.id) ?? `g${next++}`;
-      const old = groupOf.get(b.id);
-      // b's old group (if any) joins this one, so chains of nearby places end up together
-      for (const [id, g] of groupOf) if (old && g === old) groupOf.set(id, group);
-      groupOf.set(a.id, group);
-      groupOf.set(b.id, group);
+  for (const a of rows) {
+    for (const b of rows) {
+      if (a === b || !linked(a, b)) continue;
+      const group = groupOf.get(a[0]) ?? groupOf.get(b[0]) ?? `${prefix}${next++}`;
+      const old = groupOf.get(b[0]);
+      // b's old group (if any) joins this one, so chains of linked rows end up together
+      for (const [ref, g] of groupOf) if (old && g === old) groupOf.set(ref, group);
+      groupOf.set(a[0], group);
+      groupOf.set(b[0], group);
     }
   }
   return groupOf;
+}
+
+// The specific words of a name: no accents, lower case, 2+ letters, generic words removed.
+function specificWords(name: string): string[] {
+  return norm(name).split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !GENERIC_WORDS.has(w));
+}
+
+// Words that can link names in a nameGroup. A short word (3 letters or fewer, like "pm") counts only if it's
+// rare in this search: in at most 3 different names. Otherwise "pm" or "rd" could chain unrelated places.
+function rareWords(names: string[]): Set<string> {
+  const namesWith = new Map<string, Set<string>>(); // word -> the different names it appears in
+  for (const name of names) {
+    for (const w of specificWords(name)) {
+      if (!namesWith.has(w)) namesWith.set(w, new Set());
+      namesWith.get(w)!.add(norm(name));
+    }
+  }
+  return new Set([...namesWith].filter(([w, ns]) => w.length > 3 || ns.size <= 3).map(([w]) => w));
 }
 
 // Distance between two points in meters (haversine formula).
@@ -302,9 +362,8 @@ function sameName(a: string, b: string): boolean {
 
 // Do two names share a word that isn't generic? ("PM Puro Movimiento" and "PM" share "pm")
 function sharesWord(a: string, b: string): boolean {
-  const words = (s: string) => norm(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !GENERIC_WORDS.has(w));
-  const wordsB = new Set(words(b));
-  return words(a).some((w) => wordsB.has(w));
+  const wordsB = new Set(specificWords(b));
+  return specificWords(a).some((w) => wordsB.has(w));
 }
 
 // All the text the LLM was given for one row, for checking evidence quotes.
