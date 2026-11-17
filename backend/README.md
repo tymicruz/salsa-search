@@ -40,7 +40,8 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 - It uses the owner's personal subscription, so it's for local, owner-only prototyping. Anything deployed or multi-user must switch to a paid API provider.
 
 ## Codex CLI (local prototyping only)
-`LLM_PROVIDER=codex-cli` runs `codex exec --skip-git-repo-check --sandbox read-only --ephemeral --ignore-user-config --json -` with your ChatGPT subscription. It needs no key, but you must log in first with `codex login`. It has the same local-only, owner-only rules as Claude CLI.
+`LLM_PROVIDER=codex-cli` runs `codex exec --skip-git-repo-check --sandbox read-only --ephemeral --ignore-user-config --json --disable shell_tool --disable unified_exec … -` with your ChatGPT subscription. It needs no key, but you must log in first with `codex login`. It has the same local-only, owner-only rules as Claude CLI.
+- **Security:** Codex normally has a shell tool, and "read-only" can still read your files. A web page in the prompt could trick it into printing something like `~/.ssh`. So its shell, browser, apps and image tools are turned off with `--disable`. Tested 2026-11-17: with them off it can't run a command, and with them on it can. If an answer shows a command ran anyway, the backend rejects it.
 - Codex can't modify files (`--sandbox read-only`) and doesn't save the session (`--ephemeral`). It skips your Codex config file, but your login still works. It times out after 120s.
 - Codex adds a ~15k-token system prompt to every call, so places are batched, 20 per call.
 - The log line shows tokens in and out. Usage counts against your subscription and isn't billed.

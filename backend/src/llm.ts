@@ -148,8 +148,14 @@ async function askClaudeCli(prompt: string): Promise<string> {
 // Codex: `codex exec`, reading the prompt from stdin ("-"). Flags: --sandbox read-only = it can't change files;
 // --ephemeral = don't save the session; --ignore-user-config = skip ~/.codex/config.toml (MCP servers etc.),
 // login still works; --json = one JSON event per line, so the answer and token counts are easy to find.
+// --disable ... = turn off its shell, browser, apps and image tools (text in, text out), so a web page in the
+// prompt can't trick it into reading local files.
+const CODEX_TOOLS_OFF = ['shell_tool', 'unified_exec', 'browser_use', 'in_app_browser', 'apps', 'view_image'];
+
 async function askCodexCli(prompt: string): Promise<string> {
-  const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--ephemeral', '--ignore-user-config', '--json', '-'];
+  const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--ephemeral', '--ignore-user-config', '--json'];
+  for (const feature of CODEX_TOOLS_OFF) args.push('--disable', feature);
+  args.push('-'); // read the prompt from stdin
   if (process.env.CODEX_MODEL) args.unshift('-m', process.env.CODEX_MODEL); // empty = Codex's default model
   const stdout = await runCli('codex-cli', process.env.CODEX_BIN || 'codex', args, prompt);
 
@@ -157,6 +163,9 @@ async function askCodexCli(prompt: string): Promise<string> {
   for (const line of stdout.split('\n')) {
     if (!line.startsWith('{')) continue;
     const event = JSON.parse(line);
+    if (event.item?.type === 'command_execution') {
+      throw new Error('codex-cli ran a command even though tools are off; answer rejected');
+    }
     if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
       answer = event.item.text; // keep the last message: that's the final answer
     }
