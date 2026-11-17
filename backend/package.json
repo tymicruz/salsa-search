@@ -1,0 +1,18 @@
+{
+  "name": "salsa-search-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env src/server.ts",
+    "dev": "node --watch --env-file=.env src/server.ts",
+    "check": "tsc"
+  },
+  "dependencies": {
+    "express": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.0.0",
+    "typescript": "~6.0.0"
+  }
+}
