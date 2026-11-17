@@ -5,11 +5,14 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { GoogleAuth } from 'google-auth-library';
 
-export type Provider = 'gemini' | 'vertex' | 'openai' | 'claude-cli';
+export type Provider = 'gemini' | 'vertex' | 'openai' | 'claude-cli' | 'codex-cli';
 
 export async function askLLM(prompt: string, provider = process.env.LLM_PROVIDER): Promise<string> {
   if (provider === 'claude-cli') {
     return askClaudeCli(prompt);
+  }
+  if (provider === 'codex-cli') {
+    return askCodexCli(prompt);
   }
   if (provider === 'openai') {
     return askOpenAI(prompt);
@@ -101,36 +104,67 @@ async function askOpenAI(prompt: string): Promise<string> {
   return data.choices?.[0]?.message?.content ?? '';
 }
 
-// The owner's Claude subscription, through Claude Code's non-interactive mode (`claude -p`).
-// LOCAL PROTOTYPING ONLY: it runs the `claude` program installed on this Mac, so it can't be deployed.
-// Flags: --tools "" = no tools (text in, text out); --safe-mode = ignore CLAUDE.md, memory, MCP servers;
-// --no-session-persistence = don't save the chat to disk. Runs from the temp folder, away from the project.
-const CLAUDE_TIMEOUT_MS = 120_000;
+// ---------- Subscription CLIs: LOCAL, OWNER-ONLY PROTOTYPING ----------
+// These run a program installed on this Mac (Claude Code or Codex) with the owner's own subscription.
+// They can't be deployed; anything deployed or multi-user must use a paid API provider above.
 
-function askClaudeCli(prompt: string): Promise<string> {
-  const model = process.env.CLAUDE_MODEL || 'haiku';
-  const args = ['-p', '--model', model, '--output-format', 'json', '--tools', '', '--no-session-persistence', '--safe-mode'];
+const CLI_TIMEOUT_MS = 120_000;
 
+// Runs a program from the temp folder (away from the project), sends the prompt on stdin, returns stdout.
+function runCli(name: string, bin: string, args: string[], prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.env.CLAUDE_BIN || 'claude', args, { cwd: tmpdir(), timeout: CLAUDE_TIMEOUT_MS });
+    const child = spawn(bin, args, { cwd: tmpdir(), timeout: CLI_TIMEOUT_MS });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => (stdout += chunk));
     child.stderr.on('data', (chunk) => (stderr += chunk));
-    child.on('error', reject); // e.g. `claude` not found
+    child.on('error', reject); // e.g. the program isn't installed
     child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`claude-cli exited with ${code}: ${stderr || stdout}`));
-        return;
-      }
-      const data = JSON.parse(stdout);
-      // total_cost_usd is what the call would cost at API list price. It's counted against the
-      // subscription's usage limits, not billed.
-      const modelName = Object.keys(data.modelUsage ?? {})[0] ?? model;
-      console.log(`[claude-cli] ${modelName}: list-price equivalent ~$${(data.total_cost_usd ?? 0).toFixed(5)} (subscription, not billed)`);
-      // The model sometimes wraps its JSON in ```json fences; strip them.
-      resolve(String(data.result ?? '').replace(/^```(json)?\s*|\s*```$/g, ''));
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`${name} exited with ${code}: ${stderr || stdout}`));
     });
-    child.stdin.end(prompt); // send the prompt, then close stdin so claude starts
+    child.stdin.end(prompt); // send the prompt, then close stdin so the program starts
   });
+}
+
+// The model sometimes wraps its JSON in ```json fences; strip them.
+function stripFences(text: string): string {
+  return text.trim().replace(/^```(json)?\s*|\s*```$/g, '');
+}
+
+// Claude Code: `claude -p`. Flags: --tools "" = no tools (text in, text out);
+// --safe-mode = ignore CLAUDE.md, memory, MCP servers; --no-session-persistence = don't save the chat.
+async function askClaudeCli(prompt: string): Promise<string> {
+  const model = process.env.CLAUDE_MODEL || 'haiku';
+  const args = ['-p', '--model', model, '--output-format', 'json', '--tools', '', '--no-session-persistence', '--safe-mode'];
+  const data = JSON.parse(await runCli('claude-cli', process.env.CLAUDE_BIN || 'claude', args, prompt));
+
+  // total_cost_usd is the API list-price equivalent; it counts against the subscription's limits, not billed.
+  const modelName = Object.keys(data.modelUsage ?? {})[0] ?? model;
+  console.log(`[claude-cli] ${modelName}: list-price equivalent ~$${(data.total_cost_usd ?? 0).toFixed(5)} (subscription, not billed)`);
+  return stripFences(String(data.result ?? ''));
+}
+
+// Codex: `codex exec`, reading the prompt from stdin ("-"). Flags: --sandbox read-only = it can't change files;
+// --ephemeral = don't save the session; --ignore-user-config = skip ~/.codex/config.toml (MCP servers etc.),
+// login still works; --json = one JSON event per line, so the answer and token counts are easy to find.
+async function askCodexCli(prompt: string): Promise<string> {
+  const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--ephemeral', '--ignore-user-config', '--json', '-'];
+  if (process.env.CODEX_MODEL) args.unshift('-m', process.env.CODEX_MODEL); // empty = Codex's default model
+  const stdout = await runCli('codex-cli', process.env.CODEX_BIN || 'codex', args, prompt);
+
+  let answer = '';
+  for (const line of stdout.split('\n')) {
+    if (!line.startsWith('{')) continue;
+    const event = JSON.parse(line);
+    if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
+      answer = event.item.text; // keep the last message: that's the final answer
+    }
+    if (event.type === 'turn.completed') {
+      const u = event.usage ?? {};
+      // Codex adds its own ~15k-token system prompt to every call, which is why batching matters here.
+      console.log(`[codex-cli] ${process.env.CODEX_MODEL || 'default model'}: ${u.input_tokens} in, ${u.output_tokens} out (subscription, not billed)`);
+    }
+  }
+  return stripFences(answer);
 }

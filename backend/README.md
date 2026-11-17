@@ -23,6 +23,7 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 |---|---|
 | `LLM_PROVIDER` | `claude-cli` (your Claude subscription, local only), `gemini` (AI Studio key; the default if unset), `vertex` (Google Cloud login, no key) or `openai` |
 | `CLAUDE_MODEL`, `CLAUDE_BIN` | only for `claude-cli`: model alias (default `haiku`) and path to `claude` (default `claude`) |
+| `CODEX_MODEL`, `CODEX_BIN` | only for `codex-cli`: model (empty = Codex's default) and path to `codex` (default `codex`) |
 | `GEMINI_API_KEY` | only for `gemini`: from https://aistudio.google.com/apikey |
 | `GOOGLE_CLOUD_PROJECT` | only for `vertex`: your Cloud project ID |
 | `GOOGLE_CLOUD_LOCATION` | only for `vertex`: `global` (where Flash-Lite is offered). Other locations use the `{location}-aiplatform.googleapis.com` host, which is unverified |
@@ -38,7 +39,13 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 - It runs a program on this Mac, so it can't be used in a deployed product.
 - It uses the owner's personal subscription, so it's for local, owner-only prototyping. Anything deployed or multi-user must switch to a paid API provider.
 
-**Data rule (flagged for the owner):** Google's address is sent only to Google's models (`gemini`, `vertex`). `claude-cli` and `openai` get the place name, Google types and website/SalsaVida text. Name and types are still Google Places content, so the owner must accept sending them to a non-Google model.
+## Codex CLI (local prototyping only)
+`LLM_PROVIDER=codex-cli` runs `codex exec --skip-git-repo-check --sandbox read-only --ephemeral --ignore-user-config --json -` with your ChatGPT subscription. It needs no key, but you must log in first with `codex login`. It has the same local-only, owner-only rules as Claude CLI.
+- Codex can't modify files (`--sandbox read-only`) and doesn't save the session (`--ephemeral`). It skips your Codex config file, but your login still works. It times out after 120s.
+- Codex adds a ~15k-token system prompt to every call, so places are batched, 20 per call.
+- The log line shows tokens in and out. Usage counts against your subscription and isn't billed.
+
+**Data rule:** Google's address is sent only to Google's models (`gemini`, `vertex`). `claude-cli`, `codex-cli` and `openai` get the place name, Google types and website/SalsaVida text. Name and types are still Google Places content. The owner accepted sending them (2026-11-17) for the LLM-first prototype.
 
 ## Vertex AI setup (no API key)
 For Cloud organizations that block API keys. Do this once on your Mac:
