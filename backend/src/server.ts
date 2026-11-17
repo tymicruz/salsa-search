@@ -3,6 +3,7 @@
 import express from 'express';
 import { classifyPlaces } from './classify.ts';
 import { findSocials } from './socials.ts';
+import { synthesize } from './synthesize.ts';
 
 const app = express();
 app.use(express.json({ limit: '1mb' })); // reads JSON request bodies into req.body
@@ -30,6 +31,25 @@ app.post('/classify', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(502).json({ error: 'Classifier failed' });
+  }
+});
+
+// Body: { area, places: RawPlace[], events: RawEvent[] }  ->  { venues: Venue[], notSalsa: string[] }
+app.post('/synthesize', async (req, res) => {
+  const { area, places = [], events = [] } = req.body ?? {};
+  if (!Array.isArray(places) || !Array.isArray(events) || places.some((p) => !p?.id || !p?.name)) {
+    res.status(400).json({ error: 'Send { area, places: [{ id, name, lat, lng, ... }], events: [...] }' });
+    return;
+  }
+  const start = Date.now();
+  try {
+    const result = await synthesize(places, events);
+    const seconds = ((Date.now() - start) / 1000).toFixed(1);
+    console.log(`[synthesize] ${area ?? ''}: ${places.length} places + ${events.length} events -> ${result.venues.length} venues in ${seconds}s`);
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(502).json({ error: 'Synthesis failed' });
   }
 });
 

@@ -21,7 +21,7 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 
 | Name | What |
 |---|---|
-| `LLM_PROVIDER` | `claude-cli` (your Claude subscription, local only), `gemini` (AI Studio key; the default if unset), `vertex` (Google Cloud login, no key) or `openai` |
+| `LLM_PROVIDER` | `claude-cli` (your Claude subscription, local only; the default), `codex-cli` (ChatGPT subscription, local only), `gemini` (AI Studio key), `vertex` (Google Cloud login, no key) or `openai` |
 | `CLAUDE_MODEL`, `CLAUDE_BIN` | only for `claude-cli`: model alias (default `haiku`) and path to `claude` (default `claude`) |
 | `CODEX_MODEL`, `CODEX_BIN` | only for `codex-cli`: model (empty = Codex's default) and path to `codex` (default `codex`) |
 | `GEMINI_API_KEY` | only for `gemini`: from https://aistudio.google.com/apikey |
@@ -63,7 +63,43 @@ Your account needs the "Vertex AI User" role on the project. Project owners alre
 
 CORS allows only `http://localhost:4200` (the Angular dev server).
 
+### POST /synthesize
+Turns one search's raw rows into a short list of venues a person can read. For example, three "PM" Google pins plus "Flavia's Dance School at PM" on SalsaVida become one venue. It makes one LLM call per search and stores nothing.
+
+```jsonc
+// request: what the frontend already has after a search
+{ "area": "Puerto Escondido",
+  "places": [{ "id": "ChIJ...", "name": "PM", "types": ["dance_school"], "lat": 15.86, "lng": -97.07, "googleMapsUri": "..." }],
+  "events": [{ "id": 123, "title": "Salsa social", "venue": "PM", "kind": "social", "days": [5], "time": "21:00–01:00",
+               "price": "100 MXN", "url": "https://www.salsavida.com/...", "lastEdited": "2026-10-02", "status": "listed" }] }
+// response
+{ "venues": [{
+    "id": "ChIJ...",                 // first placeId, or "sv-<eventId>" if there's no Google place
+    "name": "PM", "hosts": ["Flavia's Dance School"],
+    "placeIds": ["ChIJ...", "ChIJ..."], "lat": 15.86, "lng": -97.07, "googleMapsUri": "...",  // pin = first place
+    "category": "salsa_school",      // salsa_school | social_venue | bar_club_with_salsa | unknown
+    "offers": ["classes", "socials"],// classes | socials (partner dancing) | music
+    "summary": "One plain sentence, at most 25 words, only facts from the data.",
+    "schedule": [{ "eventId": 123, "title": "...", "kind": "social", "days": [5], "time": "...", "price": "...",
+                   "url": "...", "lastEdited": "...", "status": "listed" }],
+    "evidence": [{ "quote": "Salsa social", "source": "https://www.salsavida.com/..." }] }],
+  "notSalsa": ["ChIJ..."] }          // placeIds to hide
+```
+How it stays honest:
+- **The LLM sees** names, Google types, SalsaVida text and a `near` hint (places within 150 m share a group). It never sees coordinates or addresses.
+- **The LLM only decides** which rows belong together, plus name, hosts, category, offers, summary and evidence.
+- **Code checks every answer:**
+  - Each row ends up in exactly one venue or in `notSalsa`.
+  - IDs the LLM made up are dropped. Rows it forgot come back as their own `unknown` venue.
+  - A place may join a venue only if it's near the first place or shares a specific name word with it. Generic words like "salsa", "bar" or "academia" don't count.
+  - Evidence quotes are kept only if they appear word for word in the cited row.
+  - Schedule, times, prices, links and pin locations are copied from the input rows, never written by the LLM.
+
+**Speed (2026-11-17, claude-cli Haiku):** about 30s for 60 places + 6 events (Puerto Escondido) and about 56s for 60 places + 23 events (Medellín). The events were real SalsaVida data; the places were synthetic test rows. Each call logs `[synthesize] <area>: N places + M events -> K venues in Xs`.
+
 ### POST /classify
+*To be removed once the frontend switches to `/synthesize`.*
+
 Sends place details to the LLM in batches of 20 and returns one result per place. The LLM may only use the text it's sent; with too little evidence the answer is `unknown`.
 
 ```jsonc

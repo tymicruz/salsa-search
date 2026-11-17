@@ -20,7 +20,10 @@ export async function askLLM(prompt: string, provider = process.env.LLM_PROVIDER
   if (provider === 'vertex') {
     return askVertex(prompt);
   }
-  return askGemini(prompt);
+  if (provider === 'gemini') {
+    return askGemini(prompt);
+  }
+  return askClaudeCli(prompt); // default
 }
 
 // Paid-tier prices in USD per 1M tokens, only used for the logged estimate. Update them if the model changes.

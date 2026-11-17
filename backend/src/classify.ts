@@ -38,7 +38,7 @@ export async function classifyPlaces(places: PlaceInput[], provider?: Provider):
 async function classifyBatch(places: PlaceInput[], provider?: Provider): Promise<PlaceResult[]> {
   // Data rule: the Google address only goes to Google's own models (gemini, vertex).
   // Other providers get name, Google types and website/SalsaVida text only.
-  const used = provider ?? process.env.LLM_PROVIDER ?? 'gemini';
+  const used = provider ?? process.env.LLM_PROVIDER ?? 'claude-cli';
   const sendAddress = used === 'gemini' || used === 'vertex';
 
   const input = places.map((p) => ({
