@@ -5,6 +5,7 @@
 const USER_AGENT = 'SalsaSearchBot/0.1 (salsa map prototype; reads a venue page once to find its social links)';
 const TIMEOUT_MS = 6000;
 const MAX_REDIRECTS = 3;
+const MAX_BYTES = 2_000_000; // read at most ~2 MB of a page
 
 export interface Socials {
   instagram: string[];
@@ -47,7 +48,7 @@ export async function findSocials(url: string): Promise<Socials> {
   if (!res?.ok || !res.headers.get('content-type')?.includes('html')) {
     throw new Error(`Not an HTML page: ${url} (${res?.status})`);
   }
-  const html = await res.text();
+  const html = await readText(res);
 
   // Find every Instagram / Facebook / Linktree URL in the page source.
   const links = html.match(/https?:\/\/(?:[a-z]+\.)?(?:instagram\.com|facebook\.com|fb\.com|linktr\.ee)\/[^\s"'<>?#\\]+/gi) ?? [];
@@ -59,6 +60,22 @@ export async function findSocials(url: string): Promise<Socials> {
     }
   }
   return socials;
+}
+
+// Reads the page in chunks and stops at MAX_BYTES, so a huge page can't eat memory.
+async function readText(res: Response): Promise<string> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let bytes = 0;
+  while (bytes < MAX_BYTES) {
+    const { done, value } = await reader.read();
+    if (done) return text;
+    bytes += value.length;
+    text += decoder.decode(value, { stream: true });
+  }
+  await reader.cancel(); // too big: stop downloading, keep what we have
+  return text;
 }
 
 // Which social site a URL belongs to, or undefined. Covers subdomains like www. and m.

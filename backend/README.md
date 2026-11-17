@@ -44,6 +44,14 @@ Sends place details to the LLM in batches of 20 and returns one result per place
 - `category` is one of `salsa_school`, `social_venue`, `bar_club_with_salsa`, `not_salsa` or `unknown`.
 - `offers` is any of `classes`, `socials` (partner dancing) or `music`.
 - Only `id` and `name` are required.
+- "music" (salsa is played) and "socials" (people partner-dance) are kept separate on purpose.
+- **Cost (estimate, not yet measured):** one call of 20 places is about 4k input + 1.5k output tokens. At Gemini 3.8 Flash's listed $0.75 / $3.75 per 1M tokens (introductory price until 2026-12-31), that's about $0.01 per 20 places. "Thinking" tokens on newer models can add more.
+
+Try it (needs `GEMINI_API_KEY`):
+```
+curl -s -X POST localhost:3000/classify -H 'Content-Type: application/json' \
+  -d '{"places":[{"id":"a","name":"Salsa Academy","types":["dance_school"]},{"id":"b","name":"Taco Salsa Grill","types":["restaurant"]}]}'
+```
 
 ### POST /socials
 Fetches the website once and returns the Instagram, Facebook and Linktree links it finds.
@@ -53,7 +61,14 @@ Fetches the website once and returns the Instagram, Facebook and Linktree links 
 // response
 { "instagram": ["https://www.instagram.com/exampleschool"], "facebook": [], "linktree": [] }
 ```
-- It obeys robots.txt, sends the User-Agent `SalsaSearchBot/0.1`, and gives up after 6 seconds.
+- It obeys robots.txt, sends the User-Agent `SalsaSearchBot/0.1`, gives up after 6 seconds, and reads at most 2 MB.
+- No login and no guessing: it only returns links that are written in the page.
+
+Try it (real output, 2026-11-17):
+```
+$ curl -s -X POST localhost:3000/socials -H 'Content-Type: application/json' -d '{"url":"https://www.salsavida.com"}'
+{"instagram":["https://www.instagram.com/salsavida"],"facebook":["https://www.facebook.com/salsavida"],"linktree":[]}
+```
 - It never fetches instagram.com, facebook.com or linktr.ee. If the URL is one of those, it's returned as the link.
 - Errors return `{ "error": "..." }` with status 400 (bad input) or 502 (site or LLM failed).
 
