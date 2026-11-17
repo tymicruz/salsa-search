@@ -86,7 +86,10 @@ Turns one search's raw rows into a short list of venues a person can read. For e
   "notSalsa": ["ChIJ..."] }          // placeIds to hide
 ```
 How it stays honest:
-- **The LLM sees** names, Google types, SalsaVida text and a `near` hint (places within 150 m share a group). It never sees coordinates or addresses.
+- **The LLM sees** names, Google types, SalsaVida text and two hints computed by code. It never sees coordinates or addresses.
+  - `near`: places within 150 m share a group.
+  - `nameGroup`: rows whose names share a rare, specific word share a group. A word of 3 letters or fewer, like "PM", counts only if it's in at most 3 different names in that search, so a common short word can't chain unrelated places together.
+  - Each run logs `[synthesize] hints: near groups X offered, Y merged, name groups …`, as counts only.
 - **The LLM only decides** which rows belong together, plus name, hosts, category, offers, summary and evidence.
 - **Code checks every answer:**
   - Each row ends up in exactly one venue or in `notSalsa`.
