@@ -6,9 +6,16 @@
     [zoom]="zoom()"
     [options]="mapOptions"
     mapId="DEMO_MAP_ID"
+    (idle)="updateBounds()"
   >
     @for (p of pins(); track p.venue.id) {
-      <map-advanced-marker [position]="p.venue" [content]="p.pin" [title]="p.venue.name" />
+      <map-advanced-marker
+        [position]="p.venue"
+        [content]="p.pin"
+        [title]="p.venue.name"
+        [zIndex]="p.venue.id === selectedId() ? 1 : 0"
+        (gmpClick)="selectVenue(p.venue)"
+      />
     }
   </google-map>
 
@@ -67,5 +74,13 @@
     @if (message()) {
       <p class="w-fit mt-2 px-3 py-1 rounded bg-white shadow-md text-sm text-red-600">{{ message() }}</p>
     }
+
+    <!-- Places in view, like Google Maps' results list (src/features/venue-list). -->
+    <app-venue-list
+      class="block mt-3"
+      [venues]="venuesInView()"
+      [selectedId]="selectedId()"
+      (picked)="selectVenue($event)"
+    />
   </div>
 </main>

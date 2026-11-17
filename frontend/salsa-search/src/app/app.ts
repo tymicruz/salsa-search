@@ -2,12 +2,13 @@ import { Component, computed, signal, viewChild } from '@angular/core';
 import { GoogleMap, MapAdvancedMarker } from '@angular/google-maps';
 import { DiceButton } from '../features/dice-button/dice-button';
 import { MapLegend } from '../features/map-legend/map-legend';
+import { VenueList } from '../features/venue-list/venue-list';
 import luckyCities from './lucky-cities.json'; // city list for the dice (see docs/lucky-cities.md)
 import { MOCK_VENUES } from './mock-venues';
 import { PIN_STYLES, pinType, Venue } from './venue';
 
 @Component({
-  imports: [GoogleMap, MapAdvancedMarker, DiceButton, MapLegend],
+  imports: [GoogleMap, MapAdvancedMarker, DiceButton, MapLegend, VenueList],
   selector: 'app-root',
   templateUrl: './app.html',
 })
@@ -34,21 +35,45 @@ export class App {
   };
 
   protected venues = MOCK_VENUES;
+  protected selectedId = signal<string | null>(null); // the clicked pin / list row
+  private bounds = signal<google.maps.LatLngBounds | null>(null); // the area the map shows
 
-  // One colored pin per venue. computed() re-runs whenever a signal it reads changes.
+  // The sidebar list: venues inside the map's current view.
+  protected venuesInView = computed(() =>
+    this.venues.filter((venue) => this.bounds()?.contains(venue)),
+  );
+
+  // One colored pin per venue. computed() re-runs whenever a signal it reads changes (here: selectedId).
   protected pins = computed(() =>
-    this.venues.map((venue) => ({ venue, pin: this.makePin(venue) })),
+    this.venues.map((venue) => ({ venue, pin: this.makePin(venue, venue.id === this.selectedId()) })),
   );
 
   // Google's pin shape in the venue's color, with its letter (C, S, CS, ♪) so color isn't the only clue.
-  private makePin(venue: Venue) {
+  // The selected pin is bigger with a dark border.
+  private makePin(venue: Venue, selected: boolean) {
     const style = PIN_STYLES[pinType(venue)];
     return new google.maps.marker.PinElement({
       background: style.color,
-      borderColor: 'white',
+      borderColor: selected ? '#202124' : 'white',
       glyphText: style.letter,
       glyphColor: 'white',
+      scale: selected ? 1.4 : 1,
     });
+  }
+
+  // The map stopped moving: remember what area it shows, so the list updates.
+  protected updateBounds() {
+    this.bounds.set(this.map().getBounds());
+  }
+
+  // Pin or row clicked: select it and move the map to it. Clicking it again unselects.
+  protected selectVenue(venue: Venue) {
+    if (venue.id === this.selectedId()) {
+      this.selectedId.set(null);
+      return;
+    }
+    this.selectedId.set(venue.id);
+    this.map().panTo(venue);
   }
 
   // Groups the typing and the final pick into one billed session.

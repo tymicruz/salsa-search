@@ -1,0 +1,41 @@
+<div class="w-96 max-h-[calc(100vh-7rem)] overflow-y-auto rounded-2xl bg-white shadow-md text-sm">
+  <p class="sticky top-0 flex justify-between px-4 py-2 border-b border-gray-200 bg-white text-xs text-gray-500">
+    {{ venues().length }} places in view
+    <span class="font-medium text-orange-700">Test data</span>
+  </p>
+
+  @for (venue of venues(); track venue.id) {
+    <div
+      [id]="'venue-' + venue.id"
+      (click)="picked.emit(venue)"
+      [class.bg-blue-50]="venue.id === selectedId()"
+      class="scroll-mt-9 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50"
+    >
+      <div class="flex items-center gap-2">
+        <span class="size-3 rounded-full" [style.background]="style(venue).color"></span>
+        <span class="font-medium text-[#202124]">{{ venue.name }}</span>
+      </div>
+      <p class="text-xs text-gray-500">{{ venue.area }} · {{ style(venue).label }}</p>
+      <p class="text-xs text-gray-700">{{ summary(venue) }}</p>
+
+      <!-- Details: only for the selected place. -->
+      @if (venue.id === selectedId()) {
+        @for (group of groups; track group.kind) {
+          @if (eventsOf(venue, group.kind).length) {
+            <h3 class="mt-3 mb-1 text-xs font-medium uppercase text-gray-500">{{ group.title }}</h3>
+            @for (event of eventsOf(venue, group.kind); track $index) {
+              <div class="mb-2">
+                <p class="text-[#202124]">{{ dayNames[event.day] }} {{ event.time }} · {{ event.level }} · {{ event.price }}</p>
+                <p class="text-xs" [class.text-gray-500]="event.status !== 'stale'" [class.text-orange-700]="event.status === 'stale'">
+                  confirmed {{ event.confirmed }} · {{ statusText[event.status] }} · {{ event.source }}
+                </p>
+              </div>
+            }
+          }
+        }
+      }
+    </div>
+  } @empty {
+    <p class="px-4 py-3 text-gray-500">No places here. Try zooming out.</p>
+  }
+</div>
