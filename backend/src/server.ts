@@ -1,7 +1,6 @@
 // Salsa Search backend. Stores nothing: every request is answered and forgotten.
 // Express was picked because it's the most common Node web framework, so tutorials and answers are easy to find.
 import express from 'express';
-import { classifyPlaces } from './classify.ts';
 import { findSocials } from './socials.ts';
 import { synthesize } from './synthesize.ts';
 
@@ -17,21 +16,6 @@ app.use((req, res, next) => {
     return;
   }
   next();
-});
-
-// Body: { places: PlaceInput[] }  ->  { results: PlaceResult[] }
-app.post('/classify', async (req, res) => {
-  const places = req.body?.places;
-  if (!Array.isArray(places) || places.some((p) => !p?.id || !p?.name)) {
-    res.status(400).json({ error: 'Send { places: [{ id, name, ... }] }' });
-    return;
-  }
-  try {
-    res.json({ results: await classifyPlaces(places) });
-  } catch (err) {
-    console.error(err);
-    res.status(502).json({ error: 'Classifier failed' });
-  }
 });
 
 // Body: { area, places: RawPlace[], events: RawEvent[] }  ->  { venues: Venue[], notSalsa: string[] }

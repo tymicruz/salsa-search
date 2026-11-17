@@ -1,16 +1,12 @@
 // The only place that talks to an LLM. Give it a prompt, get back the model's JSON text.
-// The provider comes from LLM_PROVIDER in .env, unless the caller names one (the compare script does).
+// The provider comes from LLM_PROVIDER in .env (default: claude-cli).
 // Every call logs its tokens and an estimated cost, so test spending stays visible.
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { GoogleAuth } from 'google-auth-library';
 
-export type Provider = 'gemini' | 'vertex' | 'openai' | 'claude-cli' | 'codex-cli';
-
-export async function askLLM(prompt: string, provider = process.env.LLM_PROVIDER): Promise<string> {
-  if (provider === 'claude-cli') {
-    return askClaudeCli(prompt);
-  }
+export async function askLLM(prompt: string): Promise<string> {
+  const provider = process.env.LLM_PROVIDER;
   if (provider === 'codex-cli') {
     return askCodexCli(prompt);
   }
@@ -23,7 +19,7 @@ export async function askLLM(prompt: string, provider = process.env.LLM_PROVIDER
   if (provider === 'gemini') {
     return askGemini(prompt);
   }
-  return askClaudeCli(prompt); // default
+  return askClaudeCli(prompt); // claude-cli, the default
 }
 
 // Paid-tier prices in USD per 1M tokens, only used for the logged estimate. Update them if the model changes.

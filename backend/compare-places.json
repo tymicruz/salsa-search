@@ -1,7 +1,0 @@
-[
-  { "id": "test-1", "name": "Academia de Salsa Caleña", "types": ["dance_school"], "eventText": "Beginner salsa class Mon/Wed 7pm" },
-  { "id": "test-2", "name": "La Topa Tolondra", "types": ["bar", "night_club"], "eventText": "Salsa social every Thursday, free entry" },
-  { "id": "test-3", "name": "Bar El Sabor", "types": ["bar"], "websiteText": "Live salsa band on Fridays. Cocktails and tapas." },
-  { "id": "test-4", "name": "Taco Salsa Grill", "types": ["restaurant"], "websiteText": "Fresh tacos with homemade salsa verde." },
-  { "id": "test-5", "name": "Studio 54 Fitness", "types": ["gym"] }
-]
