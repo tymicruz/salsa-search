@@ -36,12 +36,17 @@ export async function classifyPlaces(places: PlaceInput[], provider?: Provider):
 }
 
 async function classifyBatch(places: PlaceInput[], provider?: Provider): Promise<PlaceResult[]> {
+  // Data rule: the Google address only goes to Google's own models (gemini, vertex).
+  // Other providers get name, Google types and website/SalsaVida text only.
+  const used = provider ?? process.env.LLM_PROVIDER ?? 'gemini';
+  const sendAddress = used === 'gemini' || used === 'vertex';
+
   const input = places.map((p) => ({
     id: p.id,
     name: p.name,
     types: p.types,
     primaryType: p.primaryType,
-    address: p.address,
+    address: sendAddress ? p.address : undefined,
     websiteText: p.websiteText?.slice(0, MAX_TEXT),
     eventText: p.eventText?.slice(0, MAX_TEXT),
   }));

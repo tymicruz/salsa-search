@@ -21,7 +21,8 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 
 | Name | What |
 |---|---|
-| `LLM_PROVIDER` | `gemini` (AI Studio key, default), `vertex` (Google Cloud login, no key) or `openai` |
+| `LLM_PROVIDER` | `claude-cli` (your Claude subscription, local only), `gemini` (AI Studio key; the default if unset), `vertex` (Google Cloud login, no key) or `openai` |
+| `CLAUDE_MODEL`, `CLAUDE_BIN` | only for `claude-cli`: model alias (default `haiku`) and path to `claude` (default `claude`) |
 | `GEMINI_API_KEY` | only for `gemini`: from https://aistudio.google.com/apikey |
 | `GOOGLE_CLOUD_PROJECT` | only for `vertex`: your Cloud project ID |
 | `GOOGLE_CLOUD_LOCATION` | only for `vertex`: `global` (where Flash-Lite is offered). Other locations use the `{location}-aiplatform.googleapis.com` host, which is unverified |
@@ -29,6 +30,14 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 | `OPENAI_API_KEY` | from https://platform.openai.com/api-keys (for `openai` or `npm run compare`) |
 | `OPENAI_MODEL` | default `gpt-6-luna` (cheap, pinned). If changed, update the prices in `src/llm.ts` |
 | `PORT` | default 3000 |
+
+## Claude CLI (local prototyping only)
+`LLM_PROVIDER=claude-cli` runs `claude -p --model haiku --output-format json` from Claude Code, using your Claude subscription. It needs no key, but `claude` must be installed and logged in.
+- Tools are off (`--tools ""`), and project files, memory and MCP servers are ignored (`--safe-mode`). Chats aren't saved (`--no-session-persistence`). It times out after 120s.
+- The log line shows a list-price equivalent: it counts against your subscription limits and isn't billed.
+- It runs a program on this Mac, so it can't be used in a deployed product.
+
+**Data rule (flagged for the owner):** Google's address is sent only to Google's models (`gemini`, `vertex`). `claude-cli` and `openai` get the place name, Google types and website/SalsaVida text. Name and types are still Google Places content, so the owner must accept sending them to a non-Google model.
 
 ## Vertex AI setup (no API key)
 For Cloud organizations that block API keys. Do this once on your Mac:
