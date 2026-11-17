@@ -31,16 +31,22 @@ Open:
   - Browser tests: `puerto-escondido-browser.md`, `ho-chi-minh-city-browser.md`.
 - **Rule:** Puerto Escondido is no longer a benchmark (overfitting). Future tests use blind cities the owner scores.
 
-## Core problem: getting raw data (details: docs/brain/data-access.md)
-- **Google search:** use Gemini API "Grounding with Google Search" (owner has keys). Price/free limit not yet checked.
-- **Reddit:** official API closing (no new requests since 2026-10-31). Use Gemini grounding to find and summarize threads. Untested whether Gemini "URL context" can read full threads.
-- **Instagram:** owner prefers Apify (scraping; owner's call). Meta Business Discovery is the allowed fallback. Avoid instagrapi on the owner's account.
+## Core problem: getting raw data
+Details: `docs/research/data-sources.md` (newest) and `docs/brain/data-access.md`.
+- **Gemini Google Search grounding is NOT usable as a pipeline.** Its terms allow showing results only to the asker: no storing, analyzing or crawling. It's only usable as a live "ask about this city" feature.
+- **Top routes:**
+  1. Google Places text search (store place IDs only) plus venue websites.
+  2. Apify instagram-profile-scraper: bio plus 12 latest posts with isPinned, ~$0.08/city; $5/month free credit. Highlights need a separate tool and come back as images only.
+  3. OpenAI web search for discovery ($10 per 1k); Reddit coverage untested.
+- **Reddit:** unsolved. The official API is closing (no new requests since 2026-10-31).
+- **Ruled out:** Facebook events, Eventbrite, Meetup.
 - **Google reviews:** Places API, 5 per place, live display only; can't be stored.
+- **Other design docs:** `docs/brain/synthesis-method.md` (raw → clean data), `docs/product/map-ux.md` (map/app design + 8 dev steps).
 
 ## Next steps (each needs the owner's yes)
-- **A.** Gemini grounding test on 2 blind cities (owner picks; answers stay with owner). Also test URL context on one Reddit thread and one Instagram post.
-- **B.** Apify Instagram test on ~5 accounts in a blind city: which fields come back, real cost.
-- **C.** Browser (Claude desktop app or Claude in Chrome) as ground truth.
+- **Small blind-city test:** Google Places finds schools/venues → Apify pulls their Instagram profiles → owner scores. Needs a free Apify account (owner creates it; token goes in `.env`).
+- **Answer the open questions** in map-ux.md and synthesis-method.md.
+- **Browser** (Claude desktop app or Claude in Chrome) as ground truth.
 
 ## Other
 - GitHub: `gh` is installed; owner must run `gh auth login`, then create a private repo `salsa-search` and push.
