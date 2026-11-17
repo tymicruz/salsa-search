@@ -8,6 +8,7 @@
 export interface Place {
   id: string; // Google place ID
   name: string;
+  address: string; // Google's formattedAddress; the backend compares it to join places at the same address (never sent to the AI)
   lat: number;
   lng: number;
   googleMapsUri: string;

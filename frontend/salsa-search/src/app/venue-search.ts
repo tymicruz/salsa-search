@@ -7,10 +7,12 @@ import { offersFromSchedule, Place, SalsaEvent, Venue } from './venue';
 // All of these are "Pro" fields (5,000 free requests a month, then $32 per 1,000).
 // Ratings, opening hours or websites would be "Enterprise" (pricier), so we don't ask for them.
 // addressComponents is also Pro; we use it to find which city the area is in.
+// formattedAddress (Pro) lets the backend join places at the same street address.
 // types and primaryType are cheaper Essentials fields; they help the backend's AI guess the kind of place.
 const PLACE_FIELDS = [
   'id',
   'displayName',
+  'formattedAddress',
   'location',
   'googleMapsURI',
   'addressComponents',
@@ -42,6 +44,7 @@ export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ pl
       found.set(place.id, {
         id: place.id,
         name: place.displayName ?? '',
+        address: place.formattedAddress ?? '',
         lat: place.location!.lat(),
         lng: place.location!.lng(),
         googleMapsUri: place.googleMapsURI ?? '',
