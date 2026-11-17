@@ -24,7 +24,7 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 | `LLM_PROVIDER` | `gemini` (AI Studio key, default), `vertex` (Google Cloud login, no key) or `openai` |
 | `GEMINI_API_KEY` | only for `gemini`: from https://aistudio.google.com/apikey |
 | `GOOGLE_CLOUD_PROJECT` | only for `vertex`: your Cloud project ID |
-| `GOOGLE_CLOUD_LOCATION` | only for `vertex`: `global` (where Flash-Lite is offered) |
+| `GOOGLE_CLOUD_LOCATION` | only for `vertex`: `global` (where Flash-Lite is offered). Other locations use the `{location}-aiplatform.googleapis.com` host, which is unverified |
 | `GEMINI_MODEL` | default `gemini-3.5-flash-lite` (cheap, pinned), for `gemini` and `vertex`. If changed, update the prices in `src/llm.ts` |
 | `OPENAI_API_KEY` | from https://platform.openai.com/api-keys (for `openai` or `npm run compare`) |
 | `OPENAI_MODEL` | default `gpt-6-luna` (cheap, pinned). If changed, update the prices in `src/llm.ts` |
