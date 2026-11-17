@@ -69,7 +69,7 @@ Turns one search's raw rows into a short list of venues a person can read. For e
 ```jsonc
 // request: what the frontend already has after a search
 { "area": "Puerto Escondido",
-  "places": [{ "id": "ChIJ...", "name": "PM", "types": ["dance_school"], "lat": 15.86, "lng": -97.07, "googleMapsUri": "..." }],
+  "places": [{ "id": "ChIJ...", "name": "PM", "types": ["dance_school"], "lat": 15.86, "lng": -97.07, "googleMapsUri": "...", "address": "..." }],
   "events": [{ "id": 123, "title": "Salsa social", "venue": "PM", "kind": "social", "days": [5], "time": "21:00–01:00",
                "price": "100 MXN", "url": "https://www.salsavida.com/...", "lastEdited": "2026-10-02", "status": "listed" }] }
 // response
@@ -98,6 +98,12 @@ How it stays honest:
   - A SalsaVida event whose venue name matches a Google place's name (every word of the shorter name is in the longer one) always ends up with that place. If the LLM split them, code moves the event back. This keeps a pin from losing its own schedule, e.g. "Social Club Academia". Different branches like "Blood Dance Company (Laureles)" and "… Guayabal" don't match, so they stay apart.
   - Evidence quotes are kept only if they appear word for word in the cited row.
   - Schedule, times, prices, links and pin locations are copied from the input rows, never written by the LLM.
+- **Same building, decided by code:** two venues whose places are at most 30 m apart AND at the same street address become one venue. For example, a school that teaches upstairs in a dance bar.
+  - Same address means every word of the shorter address appears in the longer one, and the shorter one has a street or floor number. Postal codes alone don't count.
+  - Both must have salsa evidence (an LLM category or offer, SalsaVida events, or Google type `dance_school`), so two shops in one mall don't merge.
+  - The venue with SalsaVida events, or else the more specific name, keeps its name; the other becomes a host.
+  - Each merge is logged: `[synthesize] building merge: "A" into "B" (12 m, same address)`.
+  - The address (`places[].address`, Google formattedAddress) is used only by this code and never sent to the LLM.
 
 **Speed (2026-11-17, claude-cli Haiku):** about 30s for 60 places + 6 events (Puerto Escondido) and about 56s for 60 places + 23 events (Medellín). The events were real SalsaVida data; the places were synthetic test rows. Each call logs `[synthesize] <area>: N places + M events -> K venues in Xs`.
 

@@ -15,6 +15,7 @@ export interface RawPlace {
   lat: number;
   lng: number;
   googleMapsUri?: string;
+  address?: string; // Google formattedAddress: compared by code only, never sent to the LLM
 }
 
 // A SalsaVida event as the frontend has it (one row per kind, so one event ID can appear twice).
@@ -126,11 +127,74 @@ Data:
 ${JSON.stringify(input)}`;
 
   const answer = JSON.parse(await askLLM(prompt));
-  const { venues, notSalsa, venueOf } = checkAnswer(answer, placeRefs, eventRefs, near);
+  const checked = checkAnswer(answer, placeRefs, eventRefs, near);
+  const venues = mergeBuildings(checked.venues, places, checked.venueOf);
 
   // Diagnosis log (counts only): how many hint groups code offered, and how many ended up as one venue.
+  const { venueOf } = checked;
   console.log(`[synthesize] hints: near groups ${countMerged(near, venueOf)}, name groups ${countMerged(nameGroup, venueOf)}`);
-  return { venues, notSalsa };
+  return { venues, notSalsa: checked.notSalsa };
+}
+
+// ---------- Same building (decided by code, not the LLM) ----------
+
+const BUILDING_METERS = 30;
+
+// Two venues whose places are at most 30 m apart AND at the same street address are one venue: e.g. a school
+// that teaches upstairs in a dance bar. Both must have salsa evidence, so two unrelated shops in one mall
+// don't get joined. Every building merge is logged for review.
+function mergeBuildings(venues: Venue[], places: RawPlace[], venueOf: Map<string, number>): Venue[] {
+  const gone = new Set<number>(); // indexes of venues merged into another one
+  const indexOf = (placeId: string) => venues.findIndex((v, i) => !gone.has(i) && v.placeIds.includes(placeId));
+  // Salsa evidence: the LLM gave it a category or offer, it has SalsaVida events, or Google calls it a dance school.
+  const hasEvidence = (v: Venue, p: RawPlace) =>
+    v.category !== 'unknown' || v.offers.length > 0 || v.schedule.length > 0 || !!p.types?.includes('dance_school');
+
+  for (const a of places) {
+    for (const b of places) {
+      if (a === b || !a.address || !b.address) continue;
+      const [ia, ib] = [indexOf(a.id), indexOf(b.id)];
+      if (ia === -1 || ib === -1 || ia === ib) continue; // notSalsa, or already one venue
+      const distance = meters(a, b);
+      if (distance > BUILDING_METERS || !sameAddress(a.address, b.address)) continue;
+      if (!hasEvidence(venues[ia], a) || !hasEvidence(venues[ib], b)) continue;
+
+      // The venue with SalsaVida events (or else the more specific name) keeps its name; the other becomes a host.
+      const aFirst =
+        venues[ia].schedule.length !== venues[ib].schedule.length
+          ? venues[ia].schedule.length > venues[ib].schedule.length
+          : specificWords(venues[ia].name).length >= specificWords(venues[ib].name).length;
+      const [keep, drop] = aFirst ? [ia, ib] : [ib, ia];
+      console.log(`[synthesize] building merge: "${venues[drop].name}" into "${venues[keep].name}" (${Math.round(distance)} m, same address)`);
+      joinVenues(venues[keep], venues[drop]);
+      gone.add(drop);
+      for (const [ref, i] of venueOf) if (i === drop) venueOf.set(ref, keep);
+    }
+  }
+  return venues.filter((_, i) => !gone.has(i));
+}
+
+// Moves everything from `other` into `main`. main keeps its name, pin and summary.
+function joinVenues(main: Venue, other: Venue) {
+  main.placeIds.push(...other.placeIds);
+  main.schedule.push(...other.schedule);
+  for (const host of [other.name, ...other.hosts]) {
+    if (!sameName(host, main.name) && !main.hosts.includes(host)) main.hosts.push(host);
+  }
+  main.offers = [...new Set([...main.offers, ...other.offers])];
+  if (main.category === 'unknown') main.category = other.category;
+  main.summary ||= other.summary;
+  main.evidence = [...main.evidence, ...other.evidence].slice(0, 3);
+}
+
+// Same street address? Every word of the shorter address is in the longer one, and the shorter one has a street
+// or floor number (1–4 characters with a digit, like "73", "44", "2do"). Postal codes (5+ digits) are ignored,
+// so two places that only share a postal code, neighborhood and city never match.
+function sameAddress(a: string, b: string): boolean {
+  const words = (s: string) => new Set(norm(s).split(/[^a-z0-9]+/).filter((w) => w && !/^\d{5,}$/.test(w)));
+  const [short, long] = [words(a), words(b)].sort((x, y) => x.size - y.size);
+  const hasNumber = [...short].some((w) => /\d/.test(w) && w.length <= 4);
+  return short.size >= 2 && hasNumber && [...short].every((w) => long.has(w));
 }
 
 // "3 offered, 2 merged": a group counts as merged when all its rows (not dropped as notSalsa) are in one venue.
@@ -354,6 +418,7 @@ function toScheduleItem({ id, venue, ...rest }: RawEvent) {
 // This is the frontend's old matcher: "Social Club Academia" = "Social Club Academia", "Son Havana" = "Son Havana Bar".
 // Generic words DO count here, unlike sharesWord, because the whole name must match.
 function sameName(a: string, b: string): boolean {
+  if (norm(a).trim() !== '' && norm(a).trim() === norm(b).trim()) return true; // identical names always match
   const words = (s: string) => new Set(norm(s).split(/[^a-z0-9]+/).filter((w) => w.length > 2));
   const [short, long] = [words(a), words(b)].sort((x, y) => x.size - y.size);
   const specificEnough = short.size >= 2 || [...short].some((w) => w.length >= 6);
