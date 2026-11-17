@@ -128,3 +128,5 @@ $ curl -s -X POST localhost:3000/socials -H 'Content-Type: application/json' -d 
 
 ## Note
 This API fetches any URL it's given, so it should only run locally for now. Before it's deployed, block private and internal addresses.
+
+Also before any deploy: the `building merge` log line prints place names (Google content) to the console. Strip it, or log counts only.
