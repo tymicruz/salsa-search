@@ -75,7 +75,14 @@ export async function synthesize(places: RawPlace[], events: RawEvent[]) {
     ...[...eventRefs].map(([ref, e]): [string, string] => [ref, e.venue]),
   ];
   const rare = rareWords(nameRows.map(([, name]) => name));
-  const nameGroup = groupRows(nameRows, ([, a], [, b]) => specificWords(a).some((w) => rare.has(w) && specificWords(b).includes(w)), 'n');
+  // Two places link only if they're also near each other (a place and an event link by name alone,
+  // since SalsaVida events have no coordinates).
+  const sharesRareWord = ([refA, a]: [string, string], [refB, b]: [string, string]) => {
+    const [pa, pb] = [placeRefs.get(refA), placeRefs.get(refB)];
+    if (pa && pb && meters(pa, pb) > NEAR_METERS) return false;
+    return specificWords(a).some((w) => rare.has(w) && specificWords(b).includes(w));
+  };
+  const nameGroup = groupRows(nameRows, sharesRareWord, 'n');
 
   // What the LLM sees: names, types, the two hints and event text. No coordinates, no addresses.
   const input = {
@@ -224,10 +231,13 @@ function checkAnswer(
 
   // An event whose venue name matches a Google place's name (same rule the frontend used before the AI)
   // ALWAYS stays with that place, whatever the LLM says. So a pin never loses its own schedule.
+  // Only when it's unambiguous: exactly one place matches, and the names differ by generic words at most.
+  // "Son Havana" = "Son Havana Bar" binds; "Blood Dance Company" vs "Blood Dance Company Guayabal" doesn't
+  // (the extra "Guayabal" may mean another branch), so the LLM and the normal checks decide that one.
   const boundPlace = new Map<string, string>(); // event ref -> place ref
   for (const [eRef, e] of eventRefs) {
-    const match = [...placeRefs].find(([, p]) => sameName(e.venue, p.name));
-    if (match) boundPlace.set(eRef, match[0]);
+    const matches = [...placeRefs].filter(([, p]) => sameName(e.venue, p.name) && onlyGenericExtras(e.venue, p.name));
+    if (matches.length === 1) boundPlace.set(eRef, matches[0][0]);
   }
 
   for (const v of answer.venues ?? []) {
@@ -237,14 +247,10 @@ function checkAnswer(
     const myEvents = (v.events ?? []).filter((r: string) => eventRefs.has(r) && !used.has(r));
     dropped.badRefs += refs.length - myPlaces.length - myEvents.length;
 
-    // A place may join only if it's near the first place, or its name matches or shares a specific word with it.
+    // A place may join only if it's within NEAR_METERS of the first place. One venue has one location, so a shared
+    // name word is never enough on its own (e.g. two "Swing" schools 5 km apart are different businesses).
     const first = placeRefs.get(myPlaces[0]);
-    const okPlaces = myPlaces.filter((r: string, i: number) => {
-      if (i === 0) return true;
-      const p = placeRefs.get(r)!;
-      const isNear = near.has(r) && near.get(r) === near.get(myPlaces[0]);
-      return isNear || sameName(p.name, first!.name) || sharesWord(p.name, first!.name);
-    });
+    const okPlaces = myPlaces.filter((r: string, i: number) => i === 0 || meters(placeRefs.get(r)!, first!) <= NEAR_METERS);
     // An event bound to a place joins only the venue holding that place (it's re-attached below otherwise).
     // Any other event may join only if its venue/title matches the venue name, one of its places,
     // or the first event's venue (for SalsaVida-only venues).
@@ -423,6 +429,12 @@ function sameName(a: string, b: string): boolean {
   const [short, long] = [words(a), words(b)].sort((x, y) => x.size - y.size);
   const specificEnough = short.size >= 2 || [...short].some((w) => w.length >= 6);
   return specificEnough && [...short].every((w) => long.has(w));
+}
+
+// Do the two names differ only by generic words? ("Son Havana" vs "Son Havana Bar": yes. "... Guayabal": no.)
+function onlyGenericExtras(a: string, b: string): boolean {
+  const [wa, wb] = [new Set(specificWords(a)), new Set(specificWords(b))];
+  return [...wa].every((w) => wb.has(w)) && [...wb].every((w) => wa.has(w));
 }
 
 // Do two names share a word that isn't generic? ("PM Puro Movimiento" and "PM" share "pm")

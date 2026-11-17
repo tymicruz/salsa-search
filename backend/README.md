@@ -88,14 +88,15 @@ Turns one search's raw rows into a short list of venues a person can read. For e
 How it stays honest:
 - **The LLM sees** names, Google types, SalsaVida text and two hints computed by code. It never sees coordinates or addresses.
   - `near`: places within 150 m share a group.
-  - `nameGroup`: rows whose names share a rare, specific word share a group. A word of 3 letters or fewer, like "PM", counts only if it's in at most 3 different names in that search, so a common short word can't chain unrelated places together.
+  - `nameGroup`: rows whose names share a rare, specific word share a group. A word of 3 letters or fewer, like "PM", counts only if it's in at most 3 different names in that search, so a common short word can't chain unrelated places together. Two Google places only share a nameGroup if they're also within 150 m.
   - Each run logs `[synthesize] hints: near groups X offered, Y merged, name groups …`, as counts only.
 - **The LLM only decides** which rows belong together, plus name, hosts, category, offers, summary and evidence.
 - **Code checks every answer:**
   - Each row ends up in exactly one venue or in `notSalsa`.
   - IDs the LLM made up are dropped. Rows it forgot come back as their own `unknown` venue.
-  - A place may join a venue only if it's near the first place, has the same name, or shares a specific name word with it. Generic words like "salsa", "bar" or "academia" don't count as a shared word.
-  - A SalsaVida event whose venue name matches a Google place's name (every word of the shorter name is in the longer one) always ends up with that place. If the LLM split them, code moves the event back. This keeps a pin from losing its own schedule, e.g. "Social Club Academia". Different branches like "Blood Dance Company (Laureles)" and "… Guayabal" don't match, so they stay apart.
+  - A place may join a venue only if it's within 150 m of the venue's first place. One venue has one location, so a shared name word is never enough on its own.
+  - A SalsaVida event (no coordinates) may join a venue if its venue name or title matches the venue's name or shares a specific word with it. Generic words like "salsa", "bar" or "academia" don't count.
+  - A SalsaVida event whose venue name matches exactly one Google place, differing by generic words at most ("Son Havana" = "Son Havana Bar", "Social Club Academia" = "Social Club Academia"), always ends up with that place. If the LLM split them, code moves the event back, so a pin keeps its own schedule. If the place name has an extra specific word ("Blood Dance Company" vs "… Guayabal"), it could be another branch, so it isn't forced and the LLM decides.
   - Evidence quotes are kept only if they appear word for word in the cited row.
   - Schedule, times, prices, links and pin locations are copied from the input rows, never written by the LLM.
 - **Same building, decided by code:** two venues whose places are at most 30 m apart AND at the same street address become one venue. For example, a school that teaches upstairs in a dance bar.
