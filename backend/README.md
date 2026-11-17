@@ -78,6 +78,8 @@ $ curl -s -X POST localhost:3000/socials -H 'Content-Type: application/json' -d 
 npm run compare                 # classifies the made-up TEST places in compare-places.json with both
 npm run compare -- my.json      # or your own list (same shape as /classify's "places")
 ```
+**Data rule:** never send real Google Places results (names, types or addresses from Google) to OpenAI, whether through this script or `/classify` with `LLM_PROVIDER=openai`. Google's Maps terms don't allow sharing that content outside Google. For a real-data comparison, use only the name plus website and SalsaVida text, and ask the owner first.
+
 This prints one `[gemini]` / `[openai]` line per call with tokens and estimated cost, then a table of both answers and each one's reasons. It needs both keys in `.env`.
 
 ## Note
