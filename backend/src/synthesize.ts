@@ -257,12 +257,10 @@ function checkAnswer(
 
   // An event whose venue name matches a Google place's name (same rule the frontend used before the AI)
   // ALWAYS stays with that place, whatever the LLM says. So a pin never loses its own schedule.
-  // Only when it's unambiguous: exactly one place matches, and the names differ by generic words at most.
-  // "Son Havana" = "Son Havana Bar" binds; "Blood Dance Company" vs "Blood Dance Company Guayabal" doesn't
-  // (the extra "Guayabal" may mean another branch), so the LLM and the normal checks decide that one.
+  // Only when it's unambiguous: exactly one place matches, and not two different qualifiers (see differentBranch).
   const boundPlace = new Map<string, string>(); // event ref -> place ref
   for (const [eRef, e] of eventRefs) {
-    const matches = [...placeRefs].filter(([, p]) => sameName(e.venue, p.name) && onlyGenericExtras(e.venue, p.name));
+    const matches = [...placeRefs].filter(([, p]) => sameName(e.venue, p.name) && !differentBranch(e, p.name));
     if (matches.length === 1) boundPlace.set(eRef, matches[0][0]);
   }
 
@@ -460,10 +458,17 @@ function sameName(a: string, b: string): boolean {
   return specificEnough && [...short].every((w) => long.has(w));
 }
 
-// Do the two names differ only by generic words? ("Son Havana" vs "Son Havana Bar": yes. "... Guayabal": no.)
-function onlyGenericExtras(a: string, b: string): boolean {
-  const [wa, wb] = [new Set(specificWords(a)), new Set(specificWords(b))];
-  return [...wa].every((w) => wb.has(w)) && [...wb].every((w) => wa.has(w));
+// Could the event be at another branch than this place? Yes when BOTH sides have their own qualifier:
+// the event's venue (or a "(...)" in its title) has a specific word the place lacks, AND the place has one the
+// event lacks. "Blood Dance Company" + title "(Laureles)" vs place "Blood Dance Company Guayabal": yes.
+// "Timbale" vs "Organización Cultural y Social Timbalé": no (only the place has extra words), so it binds.
+function differentBranch(e: RawEvent, placeName: string): boolean {
+  const parentheses = (e.title.match(/\(([^)]*)\)/g) ?? []).join(' ');
+  const eventWords = new Set(specificWords(`${e.venue} ${parentheses}`));
+  const placeWords = new Set(specificWords(placeName));
+  const eventExtra = [...eventWords].some((w) => !placeWords.has(w));
+  const placeExtra = [...placeWords].some((w) => !eventWords.has(w));
+  return eventExtra && placeExtra;
 }
 
 // Do two names share a word that isn't generic? ("PM Puro Movimiento" and "PM" share "pm")
