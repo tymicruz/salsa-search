@@ -5,9 +5,9 @@ import { MapLegend } from '../features/map-legend/map-legend';
 import { VenueList } from '../features/venue-list/venue-list';
 import { WeekStrip } from '../features/week-strip/week-strip';
 import luckyCities from './lucky-cities.json'; // city list for the dice (see docs/lucky-cities.md)
-import { classifyPlaces, findSocialLinks } from './backend';
-import { hasDay, PIN_STYLES, pinType, SalsaEvent, SocialLinks, Venue } from './venue';
-import { attachEvents, fetchSalsaVidaEvents, searchPlaces } from './venue-search';
+import { classifyVenues, findSocialLinks } from './backend';
+import { hasDay, Place, PIN_STYLES, pinType, SocialLinks, Venue } from './venue';
+import { fetchSalsaVidaEvents, rawToVenues, searchPlaces } from './venue-search';
 
 @Component({
   imports: [GoogleMap, MapAdvancedMarker, DiceButton, MapLegend, VenueList, WeekStrip],
@@ -36,8 +36,7 @@ export class App {
     cameraControlOptions: { position: google.maps.ControlPosition.RIGHT_CENTER },
   };
 
-  protected venues = signal<Venue[]>([]); // salsa places from the last search (kept in memory only)
-  protected unmatched = signal<SalsaEvent[]>([]); // SalsaVida events we couldn't put on a Google place
+  protected venues = signal<Venue[]>([]); // salsa venues from the last search (kept in memory only)
   protected loading = signal(false);
   protected classifying = signal(false); // waiting for the backend's AI guesses
   protected areaChanged = signal(true); // map moved since the last search: show "Search this area"
@@ -53,17 +52,22 @@ export class App {
   private activeDay = computed(() => this.hoverDay() ?? this.pinnedDay()); // hover wins while it lasts
 
   // Places the AI guessed are "not salsa" (search noise) are hidden from the map and the list.
-  private salsaVenues = computed(() => this.venues().filter((v) => v.guess?.category !== 'not_salsa'));
+  private salsaVenues = computed(() => this.venues().filter((v) => v.category !== 'not_salsa'));
 
   // The sidebar list: venues inside the map's current view, with something on the clicked day.
+  // SalsaVida-only venues have no location, so they're always listed.
   protected venuesInView = computed(() =>
-    this.salsaVenues().filter((venue) => this.bounds()?.contains(venue) && hasDay(venue, this.pinnedDay())),
+    this.salsaVenues().filter(
+      (v) => (v.lat === undefined || this.bounds()?.contains({ lat: v.lat, lng: v.lng! })) && hasDay(v, this.pinnedDay()),
+    ),
   );
 
-  // One colored pin per venue. computed() re-runs whenever a signal it reads changes
+  // One colored pin per venue that has a location. computed() re-runs whenever a signal it reads changes
   // (here: venues, selectedId and activeDay).
   protected pins = computed(() =>
-    this.salsaVenues().map((venue) => ({ venue, pin: this.makePin(venue) })),
+    this.salsaVenues()
+      .filter((v) => v.lat !== undefined)
+      .map((venue) => ({ venue, position: { lat: venue.lat!, lng: venue.lng! }, pin: this.makePin(venue) })),
   );
 
   // Google's pin shape in the venue's color, with its letter (C, S, CS, ?) so color isn't the only clue,
@@ -113,7 +117,7 @@ export class App {
     this.message.set('');
     this.selectedId.set(null);
     try {
-      const { venues, city } = await searchPlaces(area);
+      const { places, city } = await searchPlaces(area);
       // If SalsaVida fails (or no city was found), still show the Google places, with unknown schedules.
       const events = city
         ? await fetchSalsaVidaEvents(city).catch((error) => {
@@ -121,12 +125,13 @@ export class App {
             return [];
           })
         : [];
-      this.unmatched.set(attachEvents(venues, events));
+      const venues = rawToVenues(places, events); // the raw list, shown right away
       this.venues.set(venues);
       this.links.set({});
       // While testing: how often name matching misses (see the browser console).
-      console.info(`SalsaVida "${city}": ${events.length} events, ${this.unmatched().length} not matched to a place`);
-      this.classify(venues); // not awaited: pins show now, and get their colors when the guesses arrive
+      const salsaVidaOnly = venues.filter((v) => !v.placeIds.length).length;
+      console.info(`SalsaVida "${city}": ${events.length} events, ${salsaVidaOnly} venues not matched to a Google place`);
+      this.improveWithAi(venues, places); // not awaited: the raw list shows now, the AI version replaces it later
     } catch (error) {
       console.error(error);
       this.message.set('Search failed. Check the browser console.');
@@ -135,14 +140,16 @@ export class App {
     this.areaChanged.set(false);
   }
 
-  // Asks the backend's AI what each place is, then adds each guess to its venue.
-  // If the backend is off or fails, places just keep the "?" pin.
-  private async classify(venues: Venue[]) {
+  // Asks the backend's AI to improve the raw venues (types, summaries), then shows its version.
+  // If the backend is off or fails, the raw list just stays.
+  private async improveWithAi(venues: Venue[], places: Place[]) {
     this.classifying.set(true);
     try {
-      const guesses = await classifyPlaces(venues);
-      // update() builds the new list from the current one; { ...v, guess } copies a venue and adds its guess.
-      this.venues.update((list) => list.map((v) => ({ ...v, guess: guesses.get(v.id) ?? v.guess })));
+      const improved = await classifyVenues(venues, places);
+      // Only if no newer search replaced the list while the AI was thinking.
+      if (this.venues() === venues) {
+        this.venues.set(improved);
+      }
     } catch (error) {
       console.error(error);
     }
@@ -156,7 +163,9 @@ export class App {
       return;
     }
     this.selectedId.set(venue.id);
-    this.map().panTo(venue);
+    if (venue.lat !== undefined) {
+      this.map().panTo({ lat: venue.lat, lng: venue.lng! });
+    }
     if (!this.links()[venue.id]) {
       this.loadLinks(venue);
     }

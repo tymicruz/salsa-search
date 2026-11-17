@@ -10,7 +10,7 @@
   >
     @for (p of pins(); track p.venue.id) {
       <map-advanced-marker
-        [position]="p.venue"
+        [position]="p.position"
         [content]="p.pin"
         [title]="p.venue.name"
         [zIndex]="p.venue.id === selectedId() ? 1 : 0"
@@ -104,7 +104,6 @@
       [venues]="venuesInView()"
       [selectedId]="selectedId()"
       [day]="pinnedDay()"
-      [unmatched]="unmatched()"
       [loading]="loading()"
       [classifying]="classifying()"
       [links]="selectedId() ? links()[selectedId()!] : undefined"

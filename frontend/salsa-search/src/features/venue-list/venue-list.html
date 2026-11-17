@@ -1,109 +1,35 @@
 <div class="w-96 max-h-[calc(100vh-7rem)] overflow-y-auto rounded-2xl bg-white shadow-md text-sm">
-  <p class="sticky top-0 flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-white text-xs text-gray-500">
+  <p class="sticky top-0 z-10 flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-white text-xs text-gray-500">
     @if (loading()) {
       <span class="size-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin"></span>
       Looking for salsa places…
     } @else {
-      {{ venues().length }} places in view@if (day() !== null) { on {{ dayName(day()!) }}}
+      {{ confirmed().length }} salsa places in view@if (day() !== null) { on {{ dayName(day()!) }}}
       @if (classifying()) {
         <span class="size-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin"></span>
-        sorting by type…
+        AI is sorting them…
       }
     }
   </p>
 
-  @for (venue of venues(); track venue.id) {
-    <div
-      [id]="'venue-' + venue.id"
-      (click)="picked.emit(venue)"
-      [class.bg-blue-50]="venue.id === selectedId()"
-      class="scroll-mt-9 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50"
-    >
-      <div class="flex items-center gap-2">
-        <span class="size-3 shrink-0 rounded-full" [style.background]="style(venue).color"></span>
-        <span class="font-medium text-[#202124]">{{ venue.name }}</span>
-      </div>
-      <p class="text-xs text-gray-500">
-        {{ style(venue).label }}@if (!venue.events.length && venue.guess) { · AI guess}
-      </p>
-      <p class="text-xs text-gray-700">{{ summary(venue) }}</p>
-
-      <!-- Details: only for the selected place. -->
-      @if (venue.id === selectedId()) {
-        <p class="mt-2 text-xs text-gray-500">{{ venue.address }}</p>
-        @for (group of groups; track group.kind) {
-          @if (eventsOf(venue, group.kind).length) {
-            <h3 class="mt-3 mb-1 text-xs font-medium uppercase text-gray-500">{{ group.title }}</h3>
-            @for (event of eventsOf(venue, group.kind); track event.id) {
-              <div class="mb-2">
-                <p class="text-[#202124]">{{ daysText(event.days) }} {{ event.time }} · {{ event.price }}</p>
-                <p class="text-xs text-gray-700">{{ event.title }}</p>
-                <p class="text-xs" [class.text-gray-500]="event.status === 'listed'" [class.text-orange-700]="event.status === 'stale'">
-                  Listing last edited {{ event.lastEdited }} · not confirmed by the organizer
-                  @if (event.status === 'stale') { · may be outdated }
-                  ·
-                  <a [href]="event.url" target="_blank" class="text-[#1a73e8] hover:underline" (click)="$event.stopPropagation()">SalsaVida</a>
-                </p>
-              </div>
-            }
-          }
-        }
-        @if (!venue.events.length) {
-          <p class="mt-2 text-xs text-gray-500">No schedule found on SalsaVida. Check the place's own pages.</p>
-        }
-        @if (venue.guess) {
-          <p class="mt-2 text-xs text-gray-500">
-            AI guess: {{ categoryText[venue.guess.category] }}. "{{ venue.guess.reason }}"
-          </p>
-        }
-
-        <!-- Website and social links. @let gives the signal's value a name, so @if can check its type. -->
-        @let found = links();
-        <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
-          @if (found === 'loading') {
-            <span class="size-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin"></span>
-            <span class="text-gray-500">Looking for Instagram / Facebook…</span>
-          } @else if (found === 'error') {
-            <span class="text-gray-500">Couldn't check the website for social links.</span>
-          } @else if (found) {
-            @if (found.website) {
-              <a [href]="found.website" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Website</a>
-            }
-            @for (url of found.instagram; track url) {
-              <a [href]="url" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Instagram</a>
-            }
-            @for (url of found.facebook; track url) {
-              <a [href]="url" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Facebook</a>
-            }
-            @for (url of found.linktree; track url) {
-              <a [href]="url" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Linktree</a>
-            }
-            @if (!found.instagram.length && !found.facebook.length && !found.linktree.length) {
-              <span class="text-gray-500">{{ found.website ? 'No Instagram / Facebook found on the website.' : 'No website on Google.' }}</span>
-            }
-          }
-          <a [href]="venue.googleMapsUri" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 text-[#1a73e8] hover:bg-gray-100" (click)="$event.stopPropagation()">
-            Google Maps
-          </a>
-        </div>
-      }
-    </div>
+  @for (venue of confirmed(); track venue.id) {
+    <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: venue }" />
   } @empty {
-    @if (!loading()) {
+    @if (!loading() && !unconfirmed().length) {
       <p class="px-4 py-3 text-gray-500">No salsa places here yet. Search a city or press "Search this area".</p>
     }
   }
 
-  <!-- SalsaVida events we couldn't match to a Google place: still worth showing, without a pin. -->
-  @if (unmatchedForDay().length) {
-    <h3 class="px-4 pt-3 pb-1 text-xs font-medium uppercase text-gray-500">Also listed on SalsaVida (not on the map)</h3>
-    @for (event of unmatchedForDay(); track event.id + event.kind) {
-      <div class="px-4 py-2 border-b border-gray-100">
-        <p class="text-[#202124]">{{ event.venue }}</p>
-        <p class="text-xs text-gray-700">{{ event.kind === 'class' ? 'Class' : 'Social' }} · {{ daysText(event.days) }} {{ event.time }} · {{ event.price }}</p>
-        <a [href]="event.url" target="_blank" class="text-xs text-[#1a73e8] hover:underline">{{ event.title }}</a>
-      </div>
-    }
+  <!-- Places we know nothing about yet: collapsed. <details> is a plain HTML open/close box. -->
+  @if (unconfirmed().length) {
+    <details [open]="unconfirmedSelected()">
+      <summary class="px-4 py-2 border-b border-gray-100 text-xs font-medium uppercase text-gray-500 cursor-pointer">
+        Unconfirmed places ({{ unconfirmed().length }})
+      </summary>
+      @for (venue of unconfirmed(); track venue.id) {
+        <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: venue }" />
+      }
+    </details>
   }
 
   <!-- Credits required by Google (Places content) and SalsaVida (schedules). -->
@@ -112,3 +38,100 @@
     <a href="https://www.salsavida.com/" target="_blank" class="text-[#1a73e8] hover:underline">SalsaVida</a>
   </p>
 </div>
+
+<!-- One row, used by both groups above. "let-venue" names the venue passed in as $implicit. -->
+<ng-template #row let-venue>
+  <div
+    [id]="'venue-' + venue.id"
+    (click)="picked.emit(venue)"
+    [class.bg-blue-50]="venue.id === selectedId()"
+    class="scroll-mt-9 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50"
+  >
+    <div class="flex items-center gap-2">
+      <span class="size-3 shrink-0 rounded-full" [style.background]="style(venue).color"></span>
+      <span class="font-medium text-[#202124]">{{ venue.name }}</span>
+    </div>
+    @if (venue.hosts.length) {
+      <p class="text-xs text-gray-700">{{ venue.hosts.join(' · ') }}</p>
+    }
+    <p class="text-xs text-gray-500">
+      {{ style(venue).label }}@if (!venue.schedule.length && venue.offers.length) { · AI guess}
+      @if (venue.lat === undefined) { · only on SalsaVida, not on the map}
+    </p>
+    @if (venue.summary) {
+      <p class="mt-1 text-xs text-gray-700">{{ venue.summary }} <span class="text-gray-400">(AI summary)</span></p>
+    }
+    @if (venueDays(venue).length) {
+      <div class="flex gap-1 mt-1">
+        @for (d of venueDays(venue); track d) {
+          <span class="px-1.5 rounded bg-gray-100 text-[11px] text-gray-700" [class.bg-blue-100]="d === day()">{{ dayName(d) }}</span>
+        }
+      </div>
+    }
+
+    <!-- Details: only for the selected venue. -->
+    @if (venue.id === selectedId()) {
+      @for (group of groups; track group.kind) {
+        @if (eventsOf(venue, group.kind).length) {
+          <h3 class="mt-3 mb-1 text-xs font-medium uppercase text-gray-500">{{ group.title }}</h3>
+          @for (event of eventsOf(venue, group.kind); track event.eventId + event.kind) {
+            <div class="mb-2">
+              <p class="text-[#202124]">{{ daysText(event.days) }} {{ event.time }} · {{ event.price }}</p>
+              <p class="text-xs text-gray-700">{{ event.title }}</p>
+              <p class="text-xs" [class.text-gray-500]="event.status === 'listed'" [class.text-orange-700]="event.status === 'stale'">
+                Listing last edited {{ event.lastEdited }} · not confirmed by the organizer
+                @if (event.status === 'stale') { · may be outdated }
+                ·
+                <a [href]="event.url" target="_blank" class="text-[#1a73e8] hover:underline" (click)="$event.stopPropagation()">SalsaVida</a>
+              </p>
+            </div>
+          }
+        }
+      }
+      @if (!venue.schedule.length) {
+        <p class="mt-2 text-xs text-gray-500">No schedule found on SalsaVida. Check the place's own pages.</p>
+      }
+
+      @if (venue.evidence.length) {
+        <details class="mt-2 text-xs text-gray-600" (click)="$event.stopPropagation()">
+          <summary class="cursor-pointer text-gray-500">Sources ({{ venue.evidence.length }})</summary>
+          @for (item of venue.evidence; track $index) {
+            <p class="mt-1">"{{ item.quote }}" <span class="text-gray-400">({{ item.source }})</span></p>
+          }
+        </details>
+      }
+
+      <!-- Website and social links. @let gives the signal's value a name, so @if can check its type. -->
+      @let found = links();
+      <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
+        @if (found === 'loading') {
+          <span class="size-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin"></span>
+          <span class="text-gray-500">Looking for Instagram / Facebook…</span>
+        } @else if (found === 'error') {
+          <span class="text-gray-500">Couldn't check the website for social links.</span>
+        } @else if (found && venue.placeIds.length) {
+          @if (found.website) {
+            <a [href]="found.website" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Website</a>
+          }
+          @for (url of found.instagram; track url) {
+            <a [href]="url" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Instagram</a>
+          }
+          @for (url of found.facebook; track url) {
+            <a [href]="url" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Facebook</a>
+          }
+          @for (url of found.linktree; track url) {
+            <a [href]="url" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Linktree</a>
+          }
+          @if (!found.instagram.length && !found.facebook.length && !found.linktree.length) {
+            <span class="text-gray-500">{{ found.website ? 'No Instagram / Facebook found on the website.' : 'No website on Google.' }}</span>
+          }
+        }
+        @if (venue.googleMapsUri) {
+          <a [href]="venue.googleMapsUri" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 text-[#1a73e8] hover:bg-gray-100" (click)="$event.stopPropagation()">
+            Google Maps
+          </a>
+        }
+      </div>
+    }
+  </div>
+</ng-template>

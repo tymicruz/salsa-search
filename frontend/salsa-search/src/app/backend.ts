@@ -1,32 +1,31 @@
 // Calls to our own backend (backend/, see backend/README.md). It runs on the owner's machine during development.
-import { Classification, SocialLinks, Venue } from './venue';
+import { Offer, Place, SocialLinks, Venue } from './venue';
 
 const BACKEND_URL = 'http://localhost:3000';
 
-// POST /classify: the backend's AI guesses what each place is (school, social venue...).
-// One request for the whole search result; returns a guess per place ID.
-export async function classifyPlaces(venues: Venue[]): Promise<Map<string, Classification>> {
-  const places = venues.map((v) => ({
-    id: v.id,
-    name: v.name,
-    types: v.types,
-    primaryType: v.primaryType,
-    address: v.address,
-    eventText: v.events.map((e) => e.title).join('; '), // matched SalsaVida titles, as extra evidence
-  }));
-  const { results } = await post('/classify', { places });
+// POST /classify: the backend's AI guesses what each Google place is (school, social venue...).
+// One request for the whole search. Returns the venues with the guesses added:
+// AI offers join the schedule's offers; the AI's reason becomes the summary.
+// (To be replaced by POST /synthesize, which also merges duplicate venues.)
+export async function classifyVenues(venues: Venue[], places: Place[]): Promise<Venue[]> {
+  const request = places.map((p) => ({ id: p.id, name: p.name, types: p.types, primaryType: p.primaryType, address: p.address }));
+  const { results } = await post('/classify', { places: request });
 
-  const guesses = new Map<string, Classification>();
-  for (const r of results) {
-    guesses.set(r.id, { category: r.category, offers: r.offers, reason: r.reason });
-  }
-  return guesses;
+  return venues.map((venue) => {
+    const guess = results.find((r: { id: string }) => r.id === venue.placeIds[0]);
+    if (!guess) return venue;
+    const offers = [...new Set<Offer>([...venue.offers, ...guess.offers])]; // a Set drops repeats
+    return { ...venue, category: guess.category, offers, summary: guess.reason };
+  });
 }
 
 // Website (from Google, only when a place is clicked) + Instagram/Facebook/Linktree links found on it (POST /socials).
 export async function findSocialLinks(venue: Venue): Promise<SocialLinks> {
+  if (!venue.placeIds.length) {
+    return { website: '', instagram: [], facebook: [], linktree: [] }; // SalsaVida-only venue: no Google place
+  }
   // websiteURI is an Enterprise field (pricier), so it's fetched for one clicked place, never in the search.
-  const place = new google.maps.places.Place({ id: venue.id });
+  const place = new google.maps.places.Place({ id: venue.placeIds[0] });
   await place.fetchFields({ fields: ['websiteURI'] });
   const website = place.websiteURI ?? '';
   if (!website) {

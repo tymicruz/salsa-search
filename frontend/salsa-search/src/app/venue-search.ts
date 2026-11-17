@@ -1,6 +1,6 @@
 // Loads real data: salsa places from Google Places, and their weekly schedules from SalsaVida.
 // Nothing is saved; results live only in the app's signals until the next search.
-import { SalsaEvent, Venue } from './venue';
+import { offersFromSchedule, Place, SalsaEvent, Venue } from './venue';
 
 // ---------- Google Places (New) Text Search ----------
 
@@ -22,25 +22,25 @@ const QUERIES = ['salsa classes', 'salsa dance school', 'salsa bar'];
 
 // Salsa places inside the given area. The 3 queries run at the same time; duplicates are dropped.
 // Also returns the area's city: the city most of the found places are in (empty if none found).
-export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ venues: Venue[]; city: string }> {
+export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ places: Place[]; city: string }> {
   const results = await Promise.all(
     QUERIES.map((textQuery) =>
       google.maps.places.Place.searchByText({ textQuery, fields: PLACE_FIELDS, locationRestriction: area, maxResultCount: 20 }),
     ),
   );
 
-  const venues = new Map<string, Venue>(); // keyed by place ID, so a place found by 2 queries is kept once
+  const found = new Map<string, Place>(); // keyed by place ID, so a place found by 2 queries is kept once
   const cityCounts = new Map<string, number>(); // city name -> how many places are in it
   for (const { places } of results) {
     for (const place of places) {
-      if (venues.has(place.id)) continue;
+      if (found.has(place.id)) continue;
 
       const city = place.addressComponents?.find((c) => c.types.includes('locality'))?.longText;
       if (city) {
         cityCounts.set(city, (cityCounts.get(city) ?? 0) + 1);
       }
 
-      venues.set(place.id, {
+      found.set(place.id, {
         id: place.id,
         name: place.displayName ?? '',
         address: place.formattedAddress ?? '',
@@ -49,7 +49,6 @@ export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ ve
         googleMapsUri: place.googleMapsURI ?? '',
         types: place.types ?? [],
         primaryType: place.primaryType ?? '',
-        events: [],
       });
     }
   }
@@ -58,7 +57,7 @@ export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ ve
   for (const [name, count] of cityCounts) {
     if (count > (cityCounts.get(city) ?? 0)) city = name;
   }
-  return { venues: [...venues.values()], city };
+  return { places: [...found.values()], city };
 }
 
 // ---------- SalsaVida (free official MCP endpoint, no key) ----------
@@ -139,7 +138,7 @@ function toEvents(o: SalsaVidaOccurrence): SalsaEvent[] {
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
   return kinds.map((kind) => ({
-    id: o.event_id,
+    eventId: o.event_id,
     title: o.title,
     venue: o.venue,
     kind,
@@ -154,20 +153,42 @@ function toEvents(o: SalsaVidaOccurrence): SalsaEvent[] {
 
 // ---------- Matching ----------
 
-// Puts each SalsaVida event on the Google place with the same name (case, accents and punctuation ignored).
-// SalsaVida gives no coordinates, so the name is all we can match on.
-// Returns the events that matched no place, so the list can still show them.
-export function attachEvents(venues: Venue[], events: SalsaEvent[]) {
-  const unmatched: SalsaEvent[] = [];
+// Raw results -> venues, without AI (shown right away, and the fallback if the backend is down):
+// one venue per Google place, holding the SalsaVida events whose venue name matches it.
+// SalsaVida gives no coordinates, so the name is all we can match on. Events that match no place
+// become SalsaVida-only venues ("sv-<eventId>"): listed, but without a pin.
+export function rawToVenues(places: Place[], events: SalsaEvent[]): Venue[] {
+  const venues = places.map((place) => newVenue(place.id, place.name, place));
   for (const event of events) {
-    const venue = venues.find((v) => sameName(v.name, event.venue));
-    if (venue) {
-      venue.events.push(event);
-    } else {
-      unmatched.push(event);
+    let venue = venues.find((v) => sameName(v.name, event.venue));
+    if (!venue) {
+      venue = newVenue('sv-' + event.eventId, event.venue);
+      venues.push(venue);
     }
+    venue.schedule.push(event);
   }
-  return unmatched;
+  for (const venue of venues) {
+    venue.offers = offersFromSchedule(venue.schedule);
+  }
+  return venues;
+}
+
+// An empty venue; with a Google place it gets the place's pin location and Maps link.
+function newVenue(id: string, name: string, place?: Place): Venue {
+  return {
+    id,
+    name,
+    hosts: [],
+    summary: '',
+    category: '',
+    offers: [],
+    placeIds: place ? [place.id] : [],
+    lat: place?.lat,
+    lng: place?.lng,
+    googleMapsUri: place?.googleMapsUri ?? '',
+    schedule: [],
+    evidence: [],
+  };
 }
 
 // Same place if every word of the shorter name is in the longer one, in any order:
