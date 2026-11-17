@@ -106,6 +106,8 @@
       [day]="pinnedDay()"
       [unmatched]="unmatched()"
       [loading]="loading()"
+      [classifying]="classifying()"
+      [links]="selectedId() ? links()[selectedId()!] : undefined"
       (picked)="selectVenue($event)"
     />
   </div>

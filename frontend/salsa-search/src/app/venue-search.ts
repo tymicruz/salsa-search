@@ -7,7 +7,17 @@ import { SalsaEvent, Venue } from './venue';
 // All of these are "Pro" fields (5,000 free requests a month, then $32 per 1,000).
 // Ratings, opening hours or websites would be "Enterprise" (pricier), so we don't ask for them.
 // addressComponents is also Pro; we use it to find which city the area is in.
-const PLACE_FIELDS = ['id', 'displayName', 'location', 'formattedAddress', 'googleMapsURI', 'addressComponents'];
+// types and primaryType are cheaper Essentials fields; they help the backend's AI guess the kind of place.
+const PLACE_FIELDS = [
+  'id',
+  'displayName',
+  'location',
+  'formattedAddress',
+  'googleMapsURI',
+  'addressComponents',
+  'types',
+  'primaryType',
+];
 const QUERIES = ['salsa classes', 'salsa dance school', 'salsa bar'];
 
 // Salsa places inside the given area. The 3 queries run at the same time; duplicates are dropped.
@@ -37,6 +47,8 @@ export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ ve
         lat: place.location!.lat(),
         lng: place.location!.lng(),
         googleMapsUri: place.googleMapsURI ?? '',
+        types: place.types ?? [],
+        primaryType: place.primaryType ?? '',
         events: [],
       });
     }

@@ -5,7 +5,8 @@ import { MapLegend } from '../features/map-legend/map-legend';
 import { VenueList } from '../features/venue-list/venue-list';
 import { WeekStrip } from '../features/week-strip/week-strip';
 import luckyCities from './lucky-cities.json'; // city list for the dice (see docs/lucky-cities.md)
-import { hasDay, PIN_STYLES, pinType, SalsaEvent, Venue } from './venue';
+import { classifyPlaces, findSocialLinks } from './backend';
+import { hasDay, PIN_STYLES, pinType, SalsaEvent, SocialLinks, Venue } from './venue';
 import { attachEvents, fetchSalsaVidaEvents, searchPlaces } from './venue-search';
 
 @Component({
@@ -38,7 +39,10 @@ export class App {
   protected venues = signal<Venue[]>([]); // salsa places from the last search (kept in memory only)
   protected unmatched = signal<SalsaEvent[]>([]); // SalsaVida events we couldn't put on a Google place
   protected loading = signal(false);
+  protected classifying = signal(false); // waiting for the backend's AI guesses
   protected areaChanged = signal(true); // map moved since the last search: show "Search this area"
+  // Social links per place ID, loaded when a place is first clicked.
+  protected links = signal<Record<string, SocialLinks | 'loading' | 'error'>>({});
 
   protected selectedId = signal<string | null>(null); // the clicked pin / list row
   private bounds = signal<google.maps.LatLngBounds | null>(null); // the area the map shows
@@ -48,15 +52,18 @@ export class App {
   protected pinnedDay = signal<number | null>(null); // kept after a click
   private activeDay = computed(() => this.hoverDay() ?? this.pinnedDay()); // hover wins while it lasts
 
+  // Places the AI guessed are "not salsa" (search noise) are hidden from the map and the list.
+  private salsaVenues = computed(() => this.venues().filter((v) => v.guess?.category !== 'not_salsa'));
+
   // The sidebar list: venues inside the map's current view, with something on the clicked day.
   protected venuesInView = computed(() =>
-    this.venues().filter((venue) => this.bounds()?.contains(venue) && hasDay(venue, this.pinnedDay())),
+    this.salsaVenues().filter((venue) => this.bounds()?.contains(venue) && hasDay(venue, this.pinnedDay())),
   );
 
   // One colored pin per venue. computed() re-runs whenever a signal it reads changes
   // (here: venues, selectedId and activeDay).
   protected pins = computed(() =>
-    this.venues().map((venue) => ({ venue, pin: this.makePin(venue) })),
+    this.salsaVenues().map((venue) => ({ venue, pin: this.makePin(venue) })),
   );
 
   // Google's pin shape in the venue's color, with its letter (C, S, CS, ?) so color isn't the only clue,
@@ -116,14 +123,30 @@ export class App {
         : [];
       this.unmatched.set(attachEvents(venues, events));
       this.venues.set(venues);
+      this.links.set({});
       // While testing: how often name matching misses (see the browser console).
       console.info(`SalsaVida "${city}": ${events.length} events, ${this.unmatched().length} not matched to a place`);
+      this.classify(venues); // not awaited: pins show now, and get their colors when the guesses arrive
     } catch (error) {
       console.error(error);
       this.message.set('Search failed. Check the browser console.');
     }
     this.loading.set(false);
     this.areaChanged.set(false);
+  }
+
+  // Asks the backend's AI what each place is, then adds each guess to its venue.
+  // If the backend is off or fails, places just keep the "?" pin.
+  private async classify(venues: Venue[]) {
+    this.classifying.set(true);
+    try {
+      const guesses = await classifyPlaces(venues);
+      // update() builds the new list from the current one; { ...v, guess } copies a venue and adds its guess.
+      this.venues.update((list) => list.map((v) => ({ ...v, guess: guesses.get(v.id) ?? v.guess })));
+    } catch (error) {
+      console.error(error);
+    }
+    this.classifying.set(false);
   }
 
   // Pin or row clicked: select it and move the map to it. Clicking it again unselects.
@@ -134,6 +157,21 @@ export class App {
     }
     this.selectedId.set(venue.id);
     this.map().panTo(venue);
+    if (!this.links()[venue.id]) {
+      this.loadLinks(venue);
+    }
+  }
+
+  // First click on a place: get its website from Google, then Instagram/Facebook links from the backend.
+  private async loadLinks(venue: Venue) {
+    this.links.update((all) => ({ ...all, [venue.id]: 'loading' }));
+    try {
+      const found = await findSocialLinks(venue);
+      this.links.update((all) => ({ ...all, [venue.id]: found }));
+    } catch (error) {
+      console.error(error);
+      this.links.update((all) => ({ ...all, [venue.id]: 'error' }));
+    }
   }
 
   // Groups the typing and the final pick into one billed session.

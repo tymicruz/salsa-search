@@ -1,5 +1,5 @@
 import { afterRenderEffect, Component, input, output } from '@angular/core';
-import { DAY_NAMES, PIN_STYLES, pinType, SalsaEvent, Venue } from '../../app/venue';
+import { DAY_NAMES, PIN_STYLES, pinType, SalsaEvent, SocialLinks, Venue } from '../../app/venue';
 
 // Left sidebar: the salsa places in the current map view. The selected one opens its details.
 @Component({
@@ -13,6 +13,14 @@ export class VenueList {
   day = input<number | null>(null); // weekday filter from the mini calendar; null = all days
   unmatched = input<SalsaEvent[]>([]); // SalsaVida events not matched to a place on the map
   loading = input(false);
+  classifying = input(false); // the backend's AI is still guessing place types
+  links = input<SocialLinks | 'loading' | 'error'>(); // social links of the selected place
+  protected readonly categoryText: Record<string, string> = {
+    salsa_school: 'salsa school',
+    social_venue: 'social dancing venue',
+    bar_club_with_salsa: 'bar or club with salsa',
+    unknown: 'not sure',
+  };
   // output() = an event the parent listens to: (picked)="..."
   picked = output<Venue>();
 

@@ -5,6 +5,10 @@
       Looking for salsa places…
     } @else {
       {{ venues().length }} places in view@if (day() !== null) { on {{ dayName(day()!) }}}
+      @if (classifying()) {
+        <span class="size-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin"></span>
+        sorting by type…
+      }
     }
   </p>
 
@@ -19,7 +23,9 @@
         <span class="size-3 shrink-0 rounded-full" [style.background]="style(venue).color"></span>
         <span class="font-medium text-[#202124]">{{ venue.name }}</span>
       </div>
-      <p class="text-xs text-gray-500">{{ style(venue).label }}</p>
+      <p class="text-xs text-gray-500">
+        {{ style(venue).label }}@if (!venue.events.length && venue.guess) { · AI guess}
+      </p>
       <p class="text-xs text-gray-700">{{ summary(venue) }}</p>
 
       <!-- Details: only for the selected place. -->
@@ -45,9 +51,41 @@
         @if (!venue.events.length) {
           <p class="mt-2 text-xs text-gray-500">No schedule found on SalsaVida. Check the place's own pages.</p>
         }
-        <a [href]="venue.googleMapsUri" target="_blank" class="inline-block mt-2 text-xs text-[#1a73e8] hover:underline" (click)="$event.stopPropagation()">
-          Open in Google Maps
-        </a>
+        @if (venue.guess) {
+          <p class="mt-2 text-xs text-gray-500">
+            AI guess: {{ categoryText[venue.guess.category] }}. "{{ venue.guess.reason }}"
+          </p>
+        }
+
+        <!-- Website and social links. @let gives the signal's value a name, so @if can check its type. -->
+        @let found = links();
+        <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
+          @if (found === 'loading') {
+            <span class="size-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin"></span>
+            <span class="text-gray-500">Looking for Instagram / Facebook…</span>
+          } @else if (found === 'error') {
+            <span class="text-gray-500">Couldn't check the website for social links.</span>
+          } @else if (found) {
+            @if (found.website) {
+              <a [href]="found.website" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Website</a>
+            }
+            @for (url of found.instagram; track url) {
+              <a [href]="url" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Instagram</a>
+            }
+            @for (url of found.facebook; track url) {
+              <a [href]="url" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Facebook</a>
+            }
+            @for (url of found.linktree; track url) {
+              <a [href]="url" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-100" (click)="$event.stopPropagation()">Linktree</a>
+            }
+            @if (!found.instagram.length && !found.facebook.length && !found.linktree.length) {
+              <span class="text-gray-500">{{ found.website ? 'No Instagram / Facebook found on the website.' : 'No website on Google.' }}</span>
+            }
+          }
+          <a [href]="venue.googleMapsUri" target="_blank" class="px-2 py-1 rounded-md border border-gray-300 text-[#1a73e8] hover:bg-gray-100" (click)="$event.stopPropagation()">
+            Google Maps
+          </a>
+        </div>
       }
     </div>
   } @empty {
