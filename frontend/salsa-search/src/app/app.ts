@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, viewChild } from '@angular/core';
 import { GoogleMap } from '@angular/google-maps';
 import { DiceButton } from '../features/dice-button/dice-button';
 import luckyCities from './lucky-cities.json'; // city list for the dice (see docs/lucky-cities.md)
@@ -16,6 +16,9 @@ export class App {
   protected suggestions = signal<google.maps.places.PlacePrediction[]>([]);
   protected highlighted = signal(-1); // index of the arrow-key choice; -1 = none
 
+  // The <google-map> in the template, so we can call fitBounds() on it.
+  private map = viewChild.required(GoogleMap);
+
   // Groups the typing and the final pick into one billed session.
   private sessionToken = new google.maps.places.AutocompleteSessionToken();
 
@@ -31,17 +34,24 @@ export class App {
     try {
       const { suggestions } = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
         input: text,
-        includedPrimaryTypes: ['(cities)'],
+        // Cities, states/provinces, counties, lakes/mountains, and areas like "Bay Area" (Google allows max 5).
+        includedPrimaryTypes: [
+          'locality',
+          'administrative_area_level_1',
+          'administrative_area_level_2',
+          'natural_feature',
+          'colloquial_area',
+        ],
         sessionToken: this.sessionToken,
       });
       // The box changed while we waited (more typing, a pick, or cleared): ignore this old answer.
       if (input.value !== text) return;
-      // With '(cities)' every suggestion is a place, so placePrediction is never null.
+      // With place types set, every suggestion is a place, so placePrediction is never null.
       this.suggestions.set(suggestions.map((s) => s.placePrediction!));
       this.highlighted.set(-1); // new list: nothing chosen yet
     } catch (error) {
       console.error(error); // shows REQUEST_DENIED etc. if the key is the problem
-      this.message.set('City search failed. Check the browser console.');
+      this.message.set('Search failed. Check the browser console.');
     }
   }
 
@@ -62,7 +72,7 @@ export class App {
     if (pick) {
       this.selectCity(pick, input);
     } else {
-      this.message.set("Couldn't find that city.");
+      this.message.set("Couldn't find that place.");
     }
   }
 
@@ -70,15 +80,14 @@ export class App {
     input.value = prediction.text.text; // e.g. "Cali, Valle del Cauca, Colombia"
     this.suggestions.set([]);
 
-    // Ask Google for the city's coordinates (Essentials-tier field only, to keep it cheap).
+    // Ask Google for the box that fits the whole place (Essentials-tier field, to keep it cheap).
     try {
       const place = prediction.toPlace();
-      await place.fetchFields({ fields: ['location'] });
-      this.center.set(place.location!.toJSON());
-      this.zoom.set(12);
+      await place.fetchFields({ fields: ['viewport'] });
+      this.map().fitBounds(place.viewport!); // zoom so the whole city / lake / region is in view
     } catch (error) {
       console.error(error);
-      this.message.set("Couldn't find that city.");
+      this.message.set("Couldn't find that place.");
     }
     this.sessionToken = new google.maps.places.AutocompleteSessionToken(); // next search = new session
   }
@@ -92,7 +101,7 @@ export class App {
     if (first) {
       this.selectCity(first, input);
     } else {
-      this.message.set("Couldn't find that city.");
+      this.message.set("Couldn't find that place.");
     }
   }
 }
