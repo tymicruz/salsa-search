@@ -5,8 +5,8 @@ import { MapLegend } from '../features/map-legend/map-legend';
 import { VenueList } from '../features/venue-list/venue-list';
 import { WeekStrip } from '../features/week-strip/week-strip';
 import luckyCities from './lucky-cities.json'; // city list for the dice (see docs/lucky-cities.md)
-import { MOCK_VENUES } from './mock-venues';
-import { hasDay, PIN_STYLES, pinType, Venue } from './venue';
+import { hasDay, PIN_STYLES, pinType, SalsaEvent, Venue } from './venue';
+import { attachEvents, fetchSalsaVidaEvents, searchPlaces } from './venue-search';
 
 @Component({
   imports: [GoogleMap, MapAdvancedMarker, DiceButton, MapLegend, VenueList, WeekStrip],
@@ -15,7 +15,7 @@ import { hasDay, PIN_STYLES, pinType, Venue } from './venue';
 })
 export class App {
   // Signals hold state; the template updates whenever they change.
-  // Starts on Medellín, where the MOCK test venues are.
+  // Starts on Medellín (has SalsaVida listings to test with).
   protected center = signal<google.maps.LatLngLiteral>({ lat: 6.23, lng: -75.58 });
   protected zoom = signal(13);
   protected message = signal('');
@@ -35,7 +35,12 @@ export class App {
     cameraControlOptions: { position: google.maps.ControlPosition.RIGHT_CENTER },
   };
 
-  protected venues = MOCK_VENUES;
+  protected venues = signal<Venue[]>([]); // salsa places from the last search (kept in memory only)
+  protected unmatched = signal<SalsaEvent[]>([]); // SalsaVida events we couldn't put on a Google place
+  protected loading = signal(false);
+  protected areaChanged = signal(true); // map moved since the last search: show "Search this area"
+  private city = 'Medellín'; // city name sent to SalsaVida; updated when a city is searched
+
   protected selectedId = signal<string | null>(null); // the clicked pin / list row
   private bounds = signal<google.maps.LatLngBounds | null>(null); // the area the map shows
 
@@ -46,16 +51,16 @@ export class App {
 
   // The sidebar list: venues inside the map's current view, with something on the clicked day.
   protected venuesInView = computed(() =>
-    this.venues.filter((venue) => this.bounds()?.contains(venue) && hasDay(venue, this.pinnedDay())),
+    this.venues().filter((venue) => this.bounds()?.contains(venue) && hasDay(venue, this.pinnedDay())),
   );
 
   // One colored pin per venue. computed() re-runs whenever a signal it reads changes
-  // (here: selectedId and activeDay).
+  // (here: venues, selectedId and activeDay).
   protected pins = computed(() =>
-    this.venues.map((venue) => ({ venue, pin: this.makePin(venue) })),
+    this.venues().map((venue) => ({ venue, pin: this.makePin(venue) })),
   );
 
-  // Google's pin shape in the venue's color, with its letter (C, S, CS, ♪) so color isn't the only clue.
+  // Google's pin shape in the venue's color, with its letter (C, S, CS, ?) so color isn't the only clue.
   // Selected: biggest, dark border. With a day chosen: matching pins grow, the rest fade.
   private makePin(venue: Venue) {
     const style = PIN_STYLES[pinType(venue)];
@@ -77,8 +82,35 @@ export class App {
   }
 
   // The map stopped moving: remember what area it shows, so the list updates.
+  // This never searches (each search costs money); it only brings back the "Search this area" button.
   protected updateBounds() {
     this.bounds.set(this.map().getBounds());
+    this.areaChanged.set(true);
+  }
+
+  // Loads real salsa places for an area: Google places + SalsaVida schedules, at the same time.
+  // Runs only on a user action: a city search, the dice, or "Search this area".
+  protected async searchArea(area = this.map().getBounds()!) {
+    this.loading.set(true);
+    this.message.set('');
+    this.selectedId.set(null);
+    try {
+      const [venues, events] = await Promise.all([
+        searchPlaces(area),
+        // If SalsaVida fails, still show the Google places (with unknown schedules).
+        fetchSalsaVidaEvents(this.city).catch((error) => {
+          console.error(error);
+          return [];
+        }),
+      ]);
+      this.unmatched.set(attachEvents(venues, events));
+      this.venues.set(venues);
+    } catch (error) {
+      console.error(error);
+      this.message.set('Search failed. Check the browser console.');
+    }
+    this.loading.set(false);
+    this.areaChanged.set(false);
   }
 
   // Pin or row clicked: select it and move the map to it. Clicking it again unselects.
@@ -157,6 +189,8 @@ export class App {
       const place = prediction.toPlace();
       await place.fetchFields({ fields: ['viewport'] });
       this.map().fitBounds(place.viewport!); // zoom so the whole city / lake / region is in view
+      this.city = prediction.mainText?.text ?? prediction.text.text; // "Cali": the name SalsaVida knows
+      this.searchArea(place.viewport!); // find salsa places in the whole city
     } catch (error) {
       console.error(error);
       this.message.set("Couldn't find that place.");
