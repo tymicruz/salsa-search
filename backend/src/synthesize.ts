@@ -55,7 +55,7 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 // Words too common to show two names are the same place.
 const GENERIC_WORDS = new Set(
   ('salsa dance dancing baile bailes bar club academia academy escuela school studio estudio salon the and ' +
-    'la el los las de del y en at social socials clases classes class bachata latin latino night disco discoteca ' +
+    'la el los las de del y en at social socials clases classes class bachata latin latino night disco discoteca salsoteca ' +
     'restaurante restaurant cafe puerto escondido medellin cali').split(' '),
 );
 
@@ -69,7 +69,7 @@ export async function synthesize(places: RawPlace[], events: RawEvent[]) {
   // Two hints computed by code (refs -> group id):
   // near = places within NEAR_METERS of each other; nameGroup = rows whose names share a rare, specific word.
   const placeList = [...placeRefs];
-  const near = groupRows(placeList, ([, a], [, b]) => meters(a, b) <= NEAR_METERS, 'g');
+  const near = groupRows(placeList, ([, a], [, b]) => canJoin(a, b), 'g');
   const nameRows: [string, string][] = [
     ...placeList.map(([ref, p]): [string, string] => [ref, p.name]),
     ...[...eventRefs].map(([ref, e]): [string, string] => [ref, e.venue]),
@@ -104,7 +104,8 @@ Never use outside knowledge and never guess.
 
 "places" are Google Maps results. "events" are SalsaVida listings; their "venue" is the place where they happen.
 Two hints, computed for you:
-- Places with the same "near" value are within ${NEAR_METERS} m of each other.
+- Places with the same "near" value are very close: same street address, within ${BUILDING_METERS} m, or within ${NEAR_METERS} m
+  with a shared specific name word. (Plain neighbors on a busy street get no "near" value.)
 - Rows with the same "nameGroup" share a rare, specific word in their names (e.g. "PM").
 Rows with the same near or nameGroup value are usually the SAME venue: merge them unless the data shows they're
 different (e.g. branches of one school in different neighborhoods, named in the names).
@@ -172,7 +173,10 @@ function mergeBuildings(venues: Venue[], places: RawPlace[], venueOf: Map<string
           ? venues[ia].schedule.length > venues[ib].schedule.length
           : specificWords(venues[ia].name).length >= specificWords(venues[ib].name).length;
       const [keep, drop] = aFirst ? [ia, ib] : [ib, ia];
-      console.log(`[synthesize] building merge: "${venues[drop].name}" into "${venues[keep].name}" (${Math.round(distance)} m, same address)`);
+      console.log(
+        `[synthesize] building merge: "${venues[drop].name}" into "${venues[keep].name}" ` +
+          `(places "${a.name}" + "${b.name}", ${Math.round(distance)} m, same address)`,
+      );
       joinVenues(venues[keep], venues[drop]);
       gone.add(drop);
       for (const [ref, i] of venueOf) if (i === drop) venueOf.set(ref, keep);
@@ -194,12 +198,34 @@ function joinVenues(main: Venue, other: Venue) {
   main.evidence = [...main.evidence, ...other.evidence].slice(0, 3);
 }
 
+// May two Google places be one venue? Only within NEAR_METERS, and only if they:
+// (a) have the same street address, or
+// (b) are within BUILDING_METERS, when the addresses can't be compared (one has no street number), or
+// (c) share a specific name word.
+// Plain neighbors don't qualify: dense areas have different schools 15–150 m apart, at different street numbers.
+function canJoin(a: RawPlace, b: RawPlace): boolean {
+  const distance = meters(a, b);
+  if (distance > NEAR_METERS) return false;
+  if (sharesWord(a.name, b.name)) return true;
+  if (hasStreetNumber(a.address) && hasStreetNumber(b.address)) return sameAddress(a.address!, b.address!);
+  return distance <= BUILDING_METERS;
+}
+
+// Does the address have a street or floor number (1–4 characters with a digit, like "73" or "2do")?
+function hasStreetNumber(address?: string): boolean {
+  return !!address && addressWords(address).some((w) => /\d/.test(w) && w.length <= 4);
+}
+
+// Address words: no accents, lower case, postal codes (5+ digits) left out.
+function addressWords(address: string): string[] {
+  return norm(address).split(/[^a-z0-9]+/).filter((w) => w && !/^\d{5,}$/.test(w));
+}
+
 // Same street address? Every word of the shorter address is in the longer one, and the shorter one has a street
 // or floor number (1–4 characters with a digit, like "73", "44", "2do"). Postal codes (5+ digits) are ignored,
 // so two places that only share a postal code, neighborhood and city never match.
 function sameAddress(a: string, b: string): boolean {
-  const words = (s: string) => new Set(norm(s).split(/[^a-z0-9]+/).filter((w) => w && !/^\d{5,}$/.test(w)));
-  const [short, long] = [words(a), words(b)].sort((x, y) => x.size - y.size);
+  const [short, long] = [new Set(addressWords(a)), new Set(addressWords(b))].sort((x, y) => x.size - y.size);
   const hasNumber = [...short].some((w) => /\d/.test(w) && w.length <= 4);
   return short.size >= 2 && hasNumber && [...short].every((w) => long.has(w));
 }
@@ -247,10 +273,13 @@ function checkAnswer(
     const myEvents = (v.events ?? []).filter((r: string) => eventRefs.has(r) && !used.has(r));
     dropped.badRefs += refs.length - myPlaces.length - myEvents.length;
 
-    // A place may join only if it's within NEAR_METERS of the first place. One venue has one location, so a shared
-    // name word is never enough on its own (e.g. two "Swing" schools 5 km apart are different businesses).
-    const first = placeRefs.get(myPlaces[0]);
-    const okPlaces = myPlaces.filter((r: string, i: number) => i === 0 || meters(placeRefs.get(r)!, first!) <= NEAR_METERS);
+    // A place may join only if canJoin() allows it with a place already in this venue. Anything else is split
+    // back out, whatever the LLM proposed.
+    const okPlaces: string[] = [];
+    for (const r of myPlaces) {
+      const p = placeRefs.get(r)!;
+      if (okPlaces.length === 0 || okPlaces.some((q) => canJoin(p, placeRefs.get(q)!))) okPlaces.push(r);
+    }
     // An event bound to a place joins only the venue holding that place (it's re-attached below otherwise).
     // Any other event may join only if its venue/title matches the venue name, one of its places,
     // or the first event's venue (for SalsaVida-only venues).

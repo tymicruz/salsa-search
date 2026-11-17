@@ -140,7 +140,13 @@ async function askClaudeCli(prompt: string): Promise<string> {
 
   // total_cost_usd is the API list-price equivalent; it counts against the subscription's limits, not billed.
   const modelName = Object.keys(data.modelUsage ?? {})[0] ?? model;
-  console.log(`[claude-cli] ${modelName}: list-price equivalent ~$${(data.total_cost_usd ?? 0).toFixed(5)} (subscription, not billed)`);
+  const u = data.usage ?? {};
+  const input = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+  const thinking = u.output_tokens_details?.thinking_tokens ?? 0; // part of output; Haiku's reasoning before answering
+  console.log(
+    `[claude-cli] ${modelName}: ${input} in, ${u.output_tokens ?? 0} out (${thinking} thinking), ` +
+      `list-price equivalent ~$${(data.total_cost_usd ?? 0).toFixed(5)} (subscription, not billed)`,
+  );
   return stripFences(String(data.result ?? ''));
 }
 
