@@ -36,6 +36,7 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 - Tools are off (`--tools ""`), and project files, memory and MCP servers are ignored (`--safe-mode`). Chats aren't saved (`--no-session-persistence`). It times out after 120s.
 - The log line shows a list-price equivalent: it counts against your subscription limits and isn't billed.
 - It runs a program on this Mac, so it can't be used in a deployed product.
+- It uses the owner's personal subscription, so it's for local, owner-only prototyping. Anything deployed or multi-user must switch to a paid API provider.
 
 **Data rule (flagged for the owner):** Google's address is sent only to Google's models (`gemini`, `vertex`). `claude-cli` and `openai` get the place name, Google types and website/SalsaVida text. Name and types are still Google Places content, so the owner must accept sending them to a non-Google model.
 
