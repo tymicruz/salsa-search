@@ -4,8 +4,18 @@
     height="100vh"
     [center]="center()"
     [zoom]="zoom()"
-    [options]="{ mapTypeControl: false, fullscreenControl: false }"
-  />
+    [options]="mapOptions"
+    mapId="DEMO_MAP_ID"
+  >
+    @for (p of pins(); track p.venue.id) {
+      <map-advanced-marker [position]="p.venue" [content]="p.pin" [title]="p.venue.name" />
+    }
+  </google-map>
+
+  <!-- Bottom right: pin color legend. -->
+  <div class="absolute bottom-6 right-4 z-10">
+    <app-map-legend />
+  </div>
 
   <!-- Logo in the top-right corner, letters only, with a shadow so they show over the map. -->
   <h1 class="absolute top-4 right-4 z-10 text-3xl text-shadow-md">

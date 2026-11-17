@@ -1,23 +1,55 @@
-import { Component, signal, viewChild } from '@angular/core';
-import { GoogleMap } from '@angular/google-maps';
+import { Component, computed, signal, viewChild } from '@angular/core';
+import { GoogleMap, MapAdvancedMarker } from '@angular/google-maps';
 import { DiceButton } from '../features/dice-button/dice-button';
+import { MapLegend } from '../features/map-legend/map-legend';
 import luckyCities from './lucky-cities.json'; // city list for the dice (see docs/lucky-cities.md)
+import { MOCK_VENUES } from './mock-venues';
+import { PIN_STYLES, pinType, Venue } from './venue';
 
 @Component({
-  imports: [GoogleMap, DiceButton],
+  imports: [GoogleMap, MapAdvancedMarker, DiceButton, MapLegend],
   selector: 'app-root',
   templateUrl: './app.html',
 })
 export class App {
   // Signals hold state; the template updates whenever they change.
-  protected center = signal<google.maps.LatLngLiteral>({ lat: 20, lng: 0 });
-  protected zoom = signal(2);
+  // Starts on Medellín, where the MOCK test venues are.
+  protected center = signal<google.maps.LatLngLiteral>({ lat: 6.23, lng: -75.58 });
+  protected zoom = signal(13);
   protected message = signal('');
   protected suggestions = signal<google.maps.places.PlacePrediction[]>([]);
   protected highlighted = signal(-1); // index of the arrow-key choice; -1 = none
 
   // The <google-map> in the template, so we can call fitBounds() on it.
   private map = viewChild.required(GoogleMap);
+
+  // Map buttons: Google's zoom buttons move to the right middle, so the bottom right is free for our boxes.
+  protected mapOptions: google.maps.MapOptions = {
+    mapTypeControl: false,
+    fullscreenControl: false,
+    streetViewControl: false,
+    clickableIcons: false, // Google's own shop/restaurant icons do nothing when clicked
+    zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_CENTER },
+    cameraControlOptions: { position: google.maps.ControlPosition.RIGHT_CENTER },
+  };
+
+  protected venues = MOCK_VENUES;
+
+  // One colored pin per venue. computed() re-runs whenever a signal it reads changes.
+  protected pins = computed(() =>
+    this.venues.map((venue) => ({ venue, pin: this.makePin(venue) })),
+  );
+
+  // Google's pin shape in the venue's color, with its letter (C, S, CS, ♪) so color isn't the only clue.
+  private makePin(venue: Venue) {
+    const style = PIN_STYLES[pinType(venue)];
+    return new google.maps.marker.PinElement({
+      background: style.color,
+      borderColor: 'white',
+      glyphText: style.letter,
+      glyphColor: 'white',
+    });
+  }
 
   // Groups the typing and the final pick into one billed session.
   private sessionToken = new google.maps.places.AutocompleteSessionToken();
