@@ -91,7 +91,8 @@ How it stays honest:
 - **Code checks every answer:**
   - Each row ends up in exactly one venue or in `notSalsa`.
   - IDs the LLM made up are dropped. Rows it forgot come back as their own `unknown` venue.
-  - A place may join a venue only if it's near the first place or shares a specific name word with it. Generic words like "salsa", "bar" or "academia" don't count.
+  - A place may join a venue only if it's near the first place, has the same name, or shares a specific name word with it. Generic words like "salsa", "bar" or "academia" don't count as a shared word.
+  - A SalsaVida event whose venue name matches a Google place's name (every word of the shorter name is in the longer one) always ends up with that place. If the LLM split them, code moves the event back. This keeps a pin from losing its own schedule, e.g. "Social Club Academia". Different branches like "Blood Dance Company (Laureles)" and "… Guayabal" don't match, so they stay apart.
   - Evidence quotes are kept only if they appear word for word in the cited row.
   - Schedule, times, prices, links and pin locations are copied from the input rows, never written by the LLM.
 

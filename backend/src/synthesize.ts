@@ -124,7 +124,15 @@ function checkAnswer(
 ) {
   const used = new Set<string>(); // every ref may be used once
   const venues: Venue[] = [];
-  const dropped = { badRefs: 0, places: 0, events: 0, quotes: [] as string[] }; // what the checks threw out, for the log
+  const dropped = { badRefs: 0, places: 0, events: 0, reattached: 0, quotes: [] as string[] }; // for the log
+
+  // An event whose venue name matches a Google place's name (same rule the frontend used before the AI)
+  // ALWAYS stays with that place, whatever the LLM says. So a pin never loses its own schedule.
+  const boundPlace = new Map<string, string>(); // event ref -> place ref
+  for (const [eRef, e] of eventRefs) {
+    const match = [...placeRefs].find(([, p]) => sameName(e.venue, p.name));
+    if (match) boundPlace.set(eRef, match[0]);
+  }
 
   for (const v of answer.venues ?? []) {
     // Keep only real, not-yet-used refs.
@@ -133,23 +141,31 @@ function checkAnswer(
     const myEvents = (v.events ?? []).filter((r: string) => eventRefs.has(r) && !used.has(r));
     dropped.badRefs += refs.length - myPlaces.length - myEvents.length;
 
-    // A place may join only if it's near the first place or shares a specific name word with it.
+    // A place may join only if it's near the first place, or its name matches or shares a specific word with it.
     const first = placeRefs.get(myPlaces[0]);
     const okPlaces = myPlaces.filter((r: string, i: number) => {
       if (i === 0) return true;
       const p = placeRefs.get(r)!;
-      return (near.get(p.id) && near.get(p.id) === near.get(first!.id)) || sharesWord(p.name, first!.name);
+      const isNear = near.get(p.id) && near.get(p.id) === near.get(first!.id);
+      return isNear || sameName(p.name, first!.name) || sharesWord(p.name, first!.name);
     });
-    // An event may join only if its venue/title shares a specific word with the venue name, one of its places,
+    // An event bound to a place joins only the venue holding that place (it's re-attached below otherwise).
+    // Any other event may join only if its venue/title matches the venue name, one of its places,
     // or the first event's venue (for SalsaVida-only venues).
     const firstEvent = eventRefs.get(myEvents[0]);
     const names = [String(v.name ?? ''), firstEvent?.venue ?? '', ...okPlaces.map((r: string) => placeRefs.get(r)!.name)];
     const okEvents = myEvents.filter((r: string) => {
+      const bound = boundPlace.get(r);
+      if (bound) {
+        if (!okPlaces.includes(bound)) dropped.reattached++;
+        return okPlaces.includes(bound);
+      }
       const e = eventRefs.get(r)!;
-      return e === firstEvent && okPlaces.length === 0 || names.some((n) => sharesWord(`${e.venue} ${e.title}`, n));
+      const matches = names.some((n) => sameName(e.venue, n) || sharesWord(`${e.venue} ${e.title}`, n));
+      if (!matches) dropped.events++;
+      return (e === firstEvent && okPlaces.length === 0) || matches;
     });
     dropped.places += myPlaces.length - okPlaces.length; // these come back below as their own venue
-    dropped.events += myEvents.length - okEvents.length;
     if (okPlaces.length === 0 && okEvents.length === 0) continue;
     [...okPlaces, ...okEvents].forEach((r) => used.add(r));
 
@@ -191,6 +207,16 @@ function checkAnswer(
   for (const [ref, place] of placeRefs) {
     if (!used.has(ref)) venues.push(buildVenue([place], [], empty));
   }
+
+  // Bound events the LLM put elsewhere (or forgot) go to the venue holding their place.
+  // (If that place was marked notSalsa, there's no such venue and the event falls through to the leftovers.)
+  for (const [eRef, pRef] of boundPlace) {
+    const venue = venues.find((v) => v.placeIds.includes(placeRefs.get(pRef)!.id));
+    if (used.has(eRef) || !venue) continue;
+    venue.schedule.push(toScheduleItem(eventRefs.get(eRef)!));
+    used.add(eRef);
+  }
+
   const leftoverEvents = [...eventRefs].filter(([ref]) => !used.has(ref)).map(([, e]) => e);
   for (const venueName of new Set(leftoverEvents.map((e) => e.venue))) {
     venues.push(buildVenue([], leftoverEvents.filter((e) => e.venue === venueName), empty));
@@ -198,7 +224,8 @@ function checkAnswer(
 
   console.log(
     `[synthesize] checks dropped: ${dropped.badRefs} unknown/duplicate refs, ${dropped.places} places and ` +
-      `${dropped.events} events from merges they didn't fit, ${dropped.quotes.length} quotes not word for word` +
+      `${dropped.events} events from merges they didn't fit, ${dropped.reattached} events moved back to the ` +
+      `place with their exact venue name, ${dropped.quotes.length} quotes not word for word` +
       (dropped.quotes.length ? ` (${dropped.quotes.map((q) => JSON.stringify(q)).join(', ')})` : ''),
   );
   return { venues, notSalsa };
@@ -218,7 +245,7 @@ function buildVenue(places: RawPlace[], events: RawEvent[], llm: Omit<Venue, 'id
     category: llm.category,
     offers: llm.offers,
     summary: llm.summary,
-    schedule: events.map(({ id, venue, ...rest }) => ({ eventId: id, ...rest })),
+    schedule: events.map(toScheduleItem),
     evidence: llm.evidence,
   };
 }
@@ -255,6 +282,22 @@ function meters(a: RawPlace, b: RawPlace): number {
 // "Café Ritmo & Son!" -> "cafe ritmo & son!" (no accents, lower case), for loose text comparisons.
 function norm(text: string): string {
   return String(text ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// One schedule line, copied from a SalsaVida row.
+function toScheduleItem({ id, venue, ...rest }: RawEvent) {
+  return { eventId: id, ...rest };
+}
+
+// Same place name? Every word of the shorter name is in the longer one, in any order, accents and case ignored.
+// The shorter name needs 2+ words (or one word of 6+ letters) so a lone "Salsa" doesn't match everything.
+// This is the frontend's old matcher: "Social Club Academia" = "Social Club Academia", "Son Havana" = "Son Havana Bar".
+// Generic words DO count here, unlike sharesWord, because the whole name must match.
+function sameName(a: string, b: string): boolean {
+  const words = (s: string) => new Set(norm(s).split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+  const [short, long] = [words(a), words(b)].sort((x, y) => x.size - y.size);
+  const specificEnough = short.size >= 2 || [...short].some((w) => w.length >= 6);
+  return specificEnough && [...short].every((w) => long.has(w));
 }
 
 // Do two names share a word that isn't generic? ("PM Puro Movimiento" and "PM" share "pm")
