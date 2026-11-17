@@ -59,7 +59,8 @@ export class App {
     this.venues().map((venue) => ({ venue, pin: this.makePin(venue) })),
   );
 
-  // Google's pin shape in the venue's color, with its letter (C, S, CS, ?) so color isn't the only clue.
+  // Google's pin shape in the venue's color, with its letter (C, S, CS, ?) so color isn't the only clue,
+  // and the place's name to the right of it, like Google Maps.
   // Selected: biggest, dark border. With a day chosen: matching pins grow, the rest fade.
   private makePin(venue: Venue) {
     const style = PIN_STYLES[pinType(venue)];
@@ -74,10 +75,21 @@ export class App {
       glyphColor: 'white',
       scale: selected ? 1.4 : matches ? 1.25 : 1,
     });
+
+    // The name sits outside the pin's box (absolute), so the pin's tip still points at the place.
+    // The white text-shadow is a halo that keeps it readable over streets.
+    const name = document.createElement('span');
+    name.textContent = venue.name;
+    name.className =
+      'absolute left-full top-1/3 ml-1 max-w-40 truncate text-xs font-medium text-[#202124] text-shadow-[0_0_3px_white]';
+
+    const marker = document.createElement('div');
+    marker.className = 'relative';
+    marker.append(pin, name);
     if (day !== null && !matches && !selected) {
-      pin.style.opacity = '0.3';
+      marker.style.opacity = '0.3';
     }
-    return pin;
+    return marker;
   }
 
   // The map stopped moving: remember what area it shows, so the list updates.
