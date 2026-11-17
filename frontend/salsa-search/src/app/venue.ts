@@ -8,7 +8,6 @@
 export interface Place {
   id: string; // Google place ID
   name: string;
-  address: string;
   lat: number;
   lng: number;
   googleMapsUri: string;

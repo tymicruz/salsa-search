@@ -12,7 +12,6 @@ const PLACE_FIELDS = [
   'id',
   'displayName',
   'location',
-  'formattedAddress',
   'googleMapsURI',
   'addressComponents',
   'types',
@@ -43,7 +42,6 @@ export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ pl
       found.set(place.id, {
         id: place.id,
         name: place.displayName ?? '',
-        address: place.formattedAddress ?? '',
         lat: place.location!.lat(),
         lng: place.location!.lng(),
         googleMapsUri: place.googleMapsURI ?? '',

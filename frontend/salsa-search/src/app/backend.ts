@@ -1,22 +1,28 @@
 // Calls to our own backend (backend/, see backend/README.md). It runs on the owner's machine during development.
-import { Offer, Place, SocialLinks, Venue } from './venue';
+import { Place, SalsaEvent, SocialLinks, Venue } from './venue';
 
 const BACKEND_URL = 'http://localhost:3000';
 
-// POST /classify: the backend's AI guesses what each Google place is (school, social venue...).
-// One request for the whole search. Returns the venues with the guesses added:
-// AI offers join the schedule's offers; the AI's reason becomes the summary.
-// (To be replaced by POST /synthesize, which also merges duplicate venues.)
-export async function classifyVenues(venues: Venue[], places: Place[]): Promise<Venue[]> {
-  const request = places.map((p) => ({ id: p.id, name: p.name, types: p.types, primaryType: p.primaryType, address: p.address }));
-  const { results } = await post('/classify', { places: request });
+// POST /synthesize: the backend's AI merges one search's raw rows into readable venues
+// (e.g. 3 Google pins for "PM" + "Flavia's Dance School at PM" on SalsaVida -> one venue).
+// Schedules, links and pin locations are copied by the backend's code, never written by the AI.
+// Places it judges "not salsa" are simply left out of the answer. Takes ~30–60 s.
+export async function synthesizeVenues(area: string, places: Place[], events: SalsaEvent[]): Promise<Venue[]> {
+  const body = {
+    area,
+    places,
+    events: events.map(({ eventId, ...rest }) => ({ id: eventId, ...rest })), // the backend calls it "id"
+  };
+  const { venues } = await post('/synthesize', body);
 
-  return venues.map((venue) => {
-    const guess = results.find((r: { id: string }) => r.id === venue.placeIds[0]);
-    if (!guess) return venue;
-    const offers = [...new Set<Offer>([...venue.offers, ...guess.offers])]; // a Set drops repeats
-    return { ...venue, category: guess.category, offers, summary: guess.reason };
-  });
+  // The backend's schedule items have no "venue" field; ours do, so fill it with the venue's name.
+  return venues.map((v: Venue) => ({
+    ...v,
+    hosts: v.hosts ?? [],
+    googleMapsUri: v.googleMapsUri ?? '',
+    evidence: v.evidence ?? [],
+    schedule: v.schedule.map((item) => ({ ...item, venue: v.name })),
+  }));
 }
 
 // Website (from Google, only when a place is clicked) + Instagram/Facebook/Linktree links found on it (POST /socials).

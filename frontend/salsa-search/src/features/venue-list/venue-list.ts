@@ -15,7 +15,7 @@ export class VenueList {
   selectedId = input<string | null>(null);
   day = input<number | null>(null); // weekday filter from the mini calendar; null = all days
   loading = input(false);
-  classifying = input(false); // the backend's AI is still working on this search
+  merging = input(false); // the backend's AI is still merging this search's venues
   links = input<SocialLinks | 'loading' | 'error'>(); // social links of the selected venue
   // output() = an event the parent listens to: (picked)="..."
   picked = output<Venue>();

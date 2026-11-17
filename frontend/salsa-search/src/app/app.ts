@@ -5,8 +5,8 @@ import { MapLegend } from '../features/map-legend/map-legend';
 import { VenueList } from '../features/venue-list/venue-list';
 import { WeekStrip } from '../features/week-strip/week-strip';
 import luckyCities from './lucky-cities.json'; // city list for the dice (see docs/lucky-cities.md)
-import { classifyVenues, findSocialLinks } from './backend';
-import { hasDay, Place, PIN_STYLES, pinType, SocialLinks, Venue } from './venue';
+import { findSocialLinks, synthesizeVenues } from './backend';
+import { hasDay, Place, PIN_STYLES, pinType, SalsaEvent, SocialLinks, Venue } from './venue';
 import { fetchSalsaVidaEvents, rawToVenues, searchPlaces } from './venue-search';
 
 @Component({
@@ -38,7 +38,7 @@ export class App {
 
   protected venues = signal<Venue[]>([]); // salsa venues from the last search (kept in memory only)
   protected loading = signal(false);
-  protected classifying = signal(false); // waiting for the backend's AI guesses
+  protected merging = signal(false); // waiting for the backend's AI to merge the venues
   protected areaChanged = signal(true); // map moved since the last search: show "Search this area"
   // Social links per place ID, loaded when a place is first clicked.
   protected links = signal<Record<string, SocialLinks | 'loading' | 'error'>>({});
@@ -51,13 +51,10 @@ export class App {
   protected pinnedDay = signal<number | null>(null); // kept after a click
   private activeDay = computed(() => this.hoverDay() ?? this.pinnedDay()); // hover wins while it lasts
 
-  // Places the AI guessed are "not salsa" (search noise) are hidden from the map and the list.
-  private salsaVenues = computed(() => this.venues().filter((v) => v.category !== 'not_salsa'));
-
   // The sidebar list: venues inside the map's current view, with something on the clicked day.
   // SalsaVida-only venues have no location, so they're always listed.
   protected venuesInView = computed(() =>
-    this.salsaVenues().filter(
+    this.venues().filter(
       (v) => (v.lat === undefined || this.bounds()?.contains({ lat: v.lat, lng: v.lng! })) && hasDay(v, this.pinnedDay()),
     ),
   );
@@ -65,7 +62,7 @@ export class App {
   // One colored pin per venue that has a location. computed() re-runs whenever a signal it reads changes
   // (here: venues, selectedId and activeDay).
   protected pins = computed(() =>
-    this.salsaVenues()
+    this.venues()
       .filter((v) => v.lat !== undefined)
       .map((venue) => ({ venue, position: { lat: venue.lat!, lng: venue.lng! }, pin: this.makePin(venue) })),
   );
@@ -131,7 +128,7 @@ export class App {
       // While testing: how often name matching misses (see the browser console).
       const salsaVidaOnly = venues.filter((v) => !v.placeIds.length).length;
       console.info(`SalsaVida "${city}": ${events.length} events, ${salsaVidaOnly} venues not matched to a Google place`);
-      this.improveWithAi(venues, places); // not awaited: the raw list shows now, the AI version replaces it later
+      this.improveWithAi(venues, city, places, events); // not awaited: the raw list shows now, the AI version later
     } catch (error) {
       console.error(error);
       this.message.set('Search failed. Check the browser console.');
@@ -140,12 +137,12 @@ export class App {
     this.areaChanged.set(false);
   }
 
-  // Asks the backend's AI to improve the raw venues (types, summaries), then shows its version.
+  // Asks the backend's AI to merge the raw rows into readable venues (hosts, summaries, types), then shows them.
   // If the backend is off or fails, the raw list just stays.
-  private async improveWithAi(venues: Venue[], places: Place[]) {
-    this.classifying.set(true);
+  private async improveWithAi(venues: Venue[], city: string, places: Place[], events: SalsaEvent[]) {
+    this.merging.set(true);
     try {
-      const improved = await classifyVenues(venues, places);
+      const improved = await synthesizeVenues(city, places, events);
       // Only if no newer search replaced the list while the AI was thinking.
       if (this.venues() === venues) {
         this.venues.set(improved);
@@ -153,7 +150,7 @@ export class App {
     } catch (error) {
       console.error(error);
     }
-    this.classifying.set(false);
+    this.merging.set(false);
   }
 
   // Pin or row clicked: select it and move the map to it. Clicking it again unselects.
