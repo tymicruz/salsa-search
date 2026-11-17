@@ -124,11 +124,14 @@ function checkAnswer(
 ) {
   const used = new Set<string>(); // every ref may be used once
   const venues: Venue[] = [];
+  const dropped = { badRefs: 0, places: 0, events: 0, quotes: [] as string[] }; // what the checks threw out, for the log
 
   for (const v of answer.venues ?? []) {
     // Keep only real, not-yet-used refs.
+    const refs = [...(v.places ?? []), ...(v.events ?? [])];
     const myPlaces = (v.places ?? []).filter((r: string) => placeRefs.has(r) && !used.has(r));
     const myEvents = (v.events ?? []).filter((r: string) => eventRefs.has(r) && !used.has(r));
+    dropped.badRefs += refs.length - myPlaces.length - myEvents.length;
 
     // A place may join only if it's near the first place or shares a specific name word with it.
     const first = placeRefs.get(myPlaces[0]);
@@ -145,12 +148,18 @@ function checkAnswer(
       const e = eventRefs.get(r)!;
       return e === firstEvent && okPlaces.length === 0 || names.some((n) => sharesWord(`${e.venue} ${e.title}`, n));
     });
+    dropped.places += myPlaces.length - okPlaces.length; // these come back below as their own venue
+    dropped.events += myEvents.length - okEvents.length;
     if (okPlaces.length === 0 && okEvents.length === 0) continue;
     [...okPlaces, ...okEvents].forEach((r) => used.add(r));
 
     // Evidence quotes must appear word for word in the row they cite.
     const evidence = (v.evidence ?? [])
-      .filter((ev: any) => [...okPlaces, ...okEvents].includes(ev?.ref) && rowText(ev.ref, placeRefs, eventRefs).includes(norm(ev.quote)))
+      .filter((ev: any) => {
+        const ok = [...okPlaces, ...okEvents].includes(ev?.ref) && rowText(ev.ref, placeRefs, eventRefs).includes(norm(ev.quote));
+        if (!ok) dropped.quotes.push(String(ev?.quote));
+        return ok;
+      })
       .slice(0, 3)
       .map((ev: any) => ({ quote: String(ev.quote), source: sourceOf(ev.ref, placeRefs, eventRefs) }));
 
@@ -187,6 +196,11 @@ function checkAnswer(
     venues.push(buildVenue([], leftoverEvents.filter((e) => e.venue === venueName), empty));
   }
 
+  console.log(
+    `[synthesize] checks dropped: ${dropped.badRefs} unknown/duplicate refs, ${dropped.places} places and ` +
+      `${dropped.events} events from merges they didn't fit, ${dropped.quotes.length} quotes not word for word` +
+      (dropped.quotes.length ? ` (${dropped.quotes.map((q) => JSON.stringify(q)).join(', ')})` : ''),
+  );
   return { venues, notSalsa };
 }
 
