@@ -5,6 +5,7 @@
   "scripts": {
     "start": "node --env-file=.env src/server.ts",
     "dev": "node --watch --env-file=.env src/server.ts",
+    "compare": "node --env-file=.env src/compare.ts",
     "check": "tsc"
   },
   "dependencies": {

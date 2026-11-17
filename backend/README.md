@@ -23,7 +23,8 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 | `LLM_PROVIDER` | `gemini` (default) or `openai` |
 | `GEMINI_API_KEY` | from https://aistudio.google.com/apikey |
 | `GEMINI_MODEL` | default `gemini-3.5-flash-lite` (cheap, pinned). If changed, update the prices in `src/llm.ts` |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | only if `LLM_PROVIDER=openai` |
+| `OPENAI_API_KEY` | from https://platform.openai.com/api-keys (for `openai` or `npm run compare`) |
+| `OPENAI_MODEL` | default `gpt-6-luna` (cheap, pinned). If changed, update the prices in `src/llm.ts` |
 | `PORT` | default 3000 |
 
 ## Endpoints
@@ -71,6 +72,13 @@ $ curl -s -X POST localhost:3000/socials -H 'Content-Type: application/json' -d 
 ```
 - It never fetches instagram.com, facebook.com or linktr.ee. If the URL is one of those, it's returned as the link.
 - Errors return `{ "error": "..." }` with status 400 (bad input) or 502 (site or LLM failed).
+
+## Compare Gemini and OpenAI
+```
+npm run compare                 # classifies the made-up TEST places in compare-places.json with both
+npm run compare -- my.json      # or your own list (same shape as /classify's "places")
+```
+This prints one `[gemini]` / `[openai]` line per call with tokens and estimated cost, then a table of both answers and each one's reasons. It needs both keys in `.env`.
 
 ## Note
 This API fetches any URL it's given, so it should only run locally for now. Before it's deployed, block private and internal addresses.

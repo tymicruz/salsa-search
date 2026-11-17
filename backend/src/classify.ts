@@ -1,5 +1,5 @@
 // POST /classify: asks the LLM what kind of salsa place each one is, using only the text we send it.
-import { askLLM } from './llm.ts';
+import { askLLM, type Provider } from './llm.ts';
 
 // One place as the frontend sends it. Only id and name are required.
 export interface PlaceInput {
@@ -25,16 +25,17 @@ export interface PlaceResult {
 const BATCH_SIZE = 20; // places per LLM call: fewer calls = lower cost
 const MAX_TEXT = 1500; // characters of website/event text per place, to keep prompts small
 
-export async function classifyPlaces(places: PlaceInput[]): Promise<PlaceResult[]> {
+// provider is optional: leave it out to use LLM_PROVIDER from .env.
+export async function classifyPlaces(places: PlaceInput[], provider?: Provider): Promise<PlaceResult[]> {
   const results: PlaceResult[] = [];
   for (let i = 0; i < places.length; i += BATCH_SIZE) {
     const batch = places.slice(i, i + BATCH_SIZE);
-    results.push(...(await classifyBatch(batch)));
+    results.push(...(await classifyBatch(batch, provider)));
   }
   return results;
 }
 
-async function classifyBatch(places: PlaceInput[]): Promise<PlaceResult[]> {
+async function classifyBatch(places: PlaceInput[], provider?: Provider): Promise<PlaceResult[]> {
   const input = places.map((p) => ({
     id: p.id,
     name: p.name,
@@ -63,7 +64,7 @@ Return JSON: {"results": [{"id": "...", "category": "...", "offers": [...], "rea
 Places:
 ${JSON.stringify(input)}`;
 
-  const answer = JSON.parse(await askLLM(prompt));
+  const answer = JSON.parse(await askLLM(prompt, provider));
 
   // Check the model's answer: keep known values only, and return every place even if the model skipped it.
   return places.map((place) => {
