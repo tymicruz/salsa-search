@@ -3,12 +3,13 @@ import { GoogleMap, MapAdvancedMarker } from '@angular/google-maps';
 import { DiceButton } from '../features/dice-button/dice-button';
 import { MapLegend } from '../features/map-legend/map-legend';
 import { VenueList } from '../features/venue-list/venue-list';
+import { WeekStrip } from '../features/week-strip/week-strip';
 import luckyCities from './lucky-cities.json'; // city list for the dice (see docs/lucky-cities.md)
 import { MOCK_VENUES } from './mock-venues';
-import { PIN_STYLES, pinType, Venue } from './venue';
+import { hasDay, PIN_STYLES, pinType, Venue } from './venue';
 
 @Component({
-  imports: [GoogleMap, MapAdvancedMarker, DiceButton, MapLegend, VenueList],
+  imports: [GoogleMap, MapAdvancedMarker, DiceButton, MapLegend, VenueList, WeekStrip],
   selector: 'app-root',
   templateUrl: './app.html',
 })
@@ -38,27 +39,41 @@ export class App {
   protected selectedId = signal<string | null>(null); // the clicked pin / list row
   private bounds = signal<google.maps.LatLngBounds | null>(null); // the area the map shows
 
-  // The sidebar list: venues inside the map's current view.
+  // Weekday filter from the mini calendar (0 = Sunday ... 6 = Saturday, null = all days).
+  protected hoverDay = signal<number | null>(null); // previewed while the mouse is on a day
+  protected pinnedDay = signal<number | null>(null); // kept after a click
+  private activeDay = computed(() => this.hoverDay() ?? this.pinnedDay()); // hover wins while it lasts
+
+  // The sidebar list: venues inside the map's current view, with something on the clicked day.
   protected venuesInView = computed(() =>
-    this.venues.filter((venue) => this.bounds()?.contains(venue)),
+    this.venues.filter((venue) => this.bounds()?.contains(venue) && hasDay(venue, this.pinnedDay())),
   );
 
-  // One colored pin per venue. computed() re-runs whenever a signal it reads changes (here: selectedId).
+  // One colored pin per venue. computed() re-runs whenever a signal it reads changes
+  // (here: selectedId and activeDay).
   protected pins = computed(() =>
-    this.venues.map((venue) => ({ venue, pin: this.makePin(venue, venue.id === this.selectedId()) })),
+    this.venues.map((venue) => ({ venue, pin: this.makePin(venue) })),
   );
 
   // Google's pin shape in the venue's color, with its letter (C, S, CS, ♪) so color isn't the only clue.
-  // The selected pin is bigger with a dark border.
-  private makePin(venue: Venue, selected: boolean) {
+  // Selected: biggest, dark border. With a day chosen: matching pins grow, the rest fade.
+  private makePin(venue: Venue) {
     const style = PIN_STYLES[pinType(venue)];
-    return new google.maps.marker.PinElement({
+    const selected = venue.id === this.selectedId();
+    const day = this.activeDay();
+    const matches = day !== null && hasDay(venue, day);
+
+    const pin = new google.maps.marker.PinElement({
       background: style.color,
       borderColor: selected ? '#202124' : 'white',
       glyphText: style.letter,
       glyphColor: 'white',
-      scale: selected ? 1.4 : 1,
+      scale: selected ? 1.4 : matches ? 1.25 : 1,
     });
+    if (day !== null && !matches && !selected) {
+      pin.style.opacity = '0.3';
+    }
+    return pin;
   }
 
   // The map stopped moving: remember what area it shows, so the list updates.

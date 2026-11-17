@@ -10,6 +10,7 @@ export class VenueList {
   // input() = data passed in by the parent: <app-venue-list [venues]="..." />
   venues = input.required<Venue[]>();
   selectedId = input<string | null>(null);
+  day = input<number | null>(null); // weekday filter from the mini calendar; null = all days
   // output() = an event the parent listens to: (picked)="..."
   picked = output<Venue>();
 
@@ -37,10 +38,10 @@ export class VenueList {
     return PIN_STYLES[pinType(venue)];
   }
 
-  // A venue's events of one kind, Monday first.
+  // A venue's events of one kind (only the filter day, if one is chosen), Monday first.
   protected eventsOf(venue: Venue, kind: string) {
     return venue.events
-      .filter((e) => e.kind === kind)
+      .filter((e) => e.kind === kind && (this.day() === null || e.day === this.day()))
       .sort((a, b) => ((a.day + 6) % 7) - ((b.day + 6) % 7));
   }
 

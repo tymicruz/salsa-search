@@ -1,0 +1,23 @@
+<div class="rounded-lg bg-white/90 shadow-md p-2 text-xs text-[#3c4043]">
+  <p class="mb-1 px-1 text-gray-500">
+    @if (pinnedDay() === null) {
+      Hover or click a day
+    } @else {
+      Showing {{ dayNames[pinnedDay()!] }} · click it again for all days
+    }
+  </p>
+  <div class="flex gap-1" (mouseleave)="hoverDay.emit(null)">
+    @for (day of days; track day) {
+      <button
+        type="button"
+        (mouseenter)="hoverDay.emit(day)"
+        (click)="pickDay.emit(day === pinnedDay() ? null : day)"
+        [class.bg-blue-600]="day === pinnedDay()"
+        [class.text-white]="day === pinnedDay()"
+        class="w-10 py-2 rounded-md cursor-pointer font-medium hover:ring-2 hover:ring-blue-300"
+      >
+        {{ dayNames[day] }}
+      </button>
+    }
+  </div>
+</div>

@@ -19,9 +19,14 @@
     }
   </google-map>
 
-  <!-- Bottom right: pin color legend. -->
-  <div class="absolute bottom-6 right-4 z-10">
+  <!-- Bottom right: pin color legend, and the mini calendar under it (src/features/week-strip). -->
+  <div class="absolute bottom-6 right-4 z-10 flex flex-col items-end gap-2">
     <app-map-legend />
+    <app-week-strip
+      [pinnedDay]="pinnedDay()"
+      (hoverDay)="hoverDay.set($event)"
+      (pickDay)="pinnedDay.set($event)"
+    />
   </div>
 
   <!-- Logo in the top-right corner, letters only, with a shadow so they show over the map. -->
@@ -80,6 +85,7 @@
       class="block mt-3"
       [venues]="venuesInView()"
       [selectedId]="selectedId()"
+      [day]="pinnedDay()"
       (picked)="selectVenue($event)"
     />
   </div>

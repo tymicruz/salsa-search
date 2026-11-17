@@ -34,6 +34,11 @@ export const PIN_STYLES: Record<PinType, { color: string; letter: string; label:
   music: { color: '#80868b', letter: '♪', label: 'Salsa music only, no dancing' },
 };
 
+// Does the venue have anything on this weekday? (null = no day chosen, so yes.)
+export function hasDay(venue: Venue, day: number | null) {
+  return day === null || venue.events.some((e) => e.day === day);
+}
+
 // Which pin a venue gets. Music nights don't count as dancing.
 export function pinType(venue: Venue): PinType {
   const hasClass = venue.events.some((e) => e.kind === 'class');

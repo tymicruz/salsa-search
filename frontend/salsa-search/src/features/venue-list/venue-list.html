@@ -1,6 +1,6 @@
 <div class="w-96 max-h-[calc(100vh-7rem)] overflow-y-auto rounded-2xl bg-white shadow-md text-sm">
   <p class="sticky top-0 flex justify-between px-4 py-2 border-b border-gray-200 bg-white text-xs text-gray-500">
-    {{ venues().length }} places in view
+    {{ venues().length }} places in view@if (day() !== null) { on {{ dayNames[day()!] }}}
     <span class="font-medium text-orange-700">Test data</span>
   </p>
 
