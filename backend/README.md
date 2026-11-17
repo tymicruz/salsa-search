@@ -4,6 +4,7 @@ A small Node + TypeScript API used by the Angular app. It stores nothing: no dat
 
 - **Express**: the most common Node web framework, so tutorials and answers are easy to find.
 - **No build step**: Node 24 runs `.ts` files directly (it strips the types). `npm run check` runs `tsc` to type-check.
+- **google-auth-library**: Google's official package. It reads your `gcloud` login (Application Default Credentials) and turns it into short-lived access tokens for Vertex AI. Doing that by hand would mean re-implementing token refresh.
 
 ## Run
 
@@ -20,12 +21,25 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 
 | Name | What |
 |---|---|
-| `LLM_PROVIDER` | `gemini` (default) or `openai` |
-| `GEMINI_API_KEY` | from https://aistudio.google.com/apikey |
-| `GEMINI_MODEL` | default `gemini-3.5-flash-lite` (cheap, pinned). If changed, update the prices in `src/llm.ts` |
+| `LLM_PROVIDER` | `gemini` (AI Studio key, default), `vertex` (Google Cloud login, no key) or `openai` |
+| `GEMINI_API_KEY` | only for `gemini`: from https://aistudio.google.com/apikey |
+| `GOOGLE_CLOUD_PROJECT` | only for `vertex`: your Cloud project ID |
+| `GOOGLE_CLOUD_LOCATION` | only for `vertex`: `global` (where Flash-Lite is offered) |
+| `GEMINI_MODEL` | default `gemini-3.5-flash-lite` (cheap, pinned), for `gemini` and `vertex`. If changed, update the prices in `src/llm.ts` |
 | `OPENAI_API_KEY` | from https://platform.openai.com/api-keys (for `openai` or `npm run compare`) |
 | `OPENAI_MODEL` | default `gpt-6-luna` (cheap, pinned). If changed, update the prices in `src/llm.ts` |
 | `PORT` | default 3000 |
+
+## Vertex AI setup (no API key)
+For Cloud organizations that block API keys. Do this once on your Mac:
+
+1. Install the Google Cloud CLI: `brew install --cask gcloud-cli`, then open a new terminal.
+2. Log in for local apps: `gcloud auth application-default login`. A browser opens; pick your Google account. This saves the "ADC" login file this backend uses.
+3. Pick your project: `gcloud config set project YOUR_PROJECT_ID`, then `gcloud auth application-default set-quota-project YOUR_PROJECT_ID`.
+4. Enable Vertex AI: `gcloud services enable aiplatform.googleapis.com`. Or in the Console: APIs & Services → Library → "Vertex AI API" → Enable.
+5. In `.env`, set `LLM_PROVIDER=vertex`, `GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID` and `GOOGLE_CLOUD_LOCATION=global`, then restart `npm run dev`.
+
+Your account needs the "Vertex AI User" role on the project. Project owners already have it.
 
 ## Endpoints
 

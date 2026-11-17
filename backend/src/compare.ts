@@ -8,7 +8,8 @@ import { classifyPlaces, type PlaceInput } from './classify.ts';
 const file = process.argv[2] ?? 'compare-places.json';
 const places: PlaceInput[] = JSON.parse(readFileSync(file, 'utf8'));
 
-const gemini = await classifyPlaces(places, 'gemini');
+// Gemini goes through Vertex if that's what .env uses, otherwise through AI Studio.
+const gemini = await classifyPlaces(places, process.env.LLM_PROVIDER === 'vertex' ? 'vertex' : 'gemini');
 const openai = await classifyPlaces(places, 'openai');
 
 // One row per place. Results come back in the same order as the places.
