@@ -77,12 +77,9 @@
           @for (event of eventsOf(venue, group.kind); track event.eventId + event.kind) {
             <div class="mb-2">
               <p class="text-[#202124]">{{ daysText(event.days) }} {{ event.time }} · {{ event.price }}</p>
-              <p class="text-xs text-gray-700">{{ event.title }}</p>
-              <p class="text-xs" [class.text-gray-500]="event.status === 'listed'" [class.text-orange-700]="event.status === 'stale'">
-                Listing last edited {{ event.lastEdited }} · not confirmed by the organizer
-                @if (event.status === 'stale') { · may be outdated }
-                ·
-                <a [href]="event.url" target="_blank" class="text-[#1a73e8] hover:underline" (click)="$event.stopPropagation()">SalsaVida</a>
+              <p class="text-xs text-gray-700">
+                {{ event.title }} ·
+                <a [href]="event.url" target="_blank" class="text-[#1a73e8] hover:underline" (click)="$event.stopPropagation()">listed on SalsaVida</a>
               </p>
             </div>
           }
