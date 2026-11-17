@@ -39,7 +39,6 @@ export class App {
   protected unmatched = signal<SalsaEvent[]>([]); // SalsaVida events we couldn't put on a Google place
   protected loading = signal(false);
   protected areaChanged = signal(true); // map moved since the last search: show "Search this area"
-  private city = 'Medellín'; // city name sent to SalsaVida; updated when a city is searched
 
   protected selectedId = signal<string | null>(null); // the clicked pin / list row
   private bounds = signal<google.maps.LatLngBounds | null>(null); // the area the map shows
@@ -88,23 +87,25 @@ export class App {
     this.areaChanged.set(true);
   }
 
-  // Loads real salsa places for an area: Google places + SalsaVida schedules, at the same time.
+  // Loads real salsa places for an area: Google places first, then SalsaVida schedules for the city they're in.
   // Runs only on a user action: a city search, the dice, or "Search this area".
   protected async searchArea(area = this.map().getBounds()!) {
     this.loading.set(true);
     this.message.set('');
     this.selectedId.set(null);
     try {
-      const [venues, events] = await Promise.all([
-        searchPlaces(area),
-        // If SalsaVida fails, still show the Google places (with unknown schedules).
-        fetchSalsaVidaEvents(this.city).catch((error) => {
-          console.error(error);
-          return [];
-        }),
-      ]);
+      const { venues, city } = await searchPlaces(area);
+      // If SalsaVida fails (or no city was found), still show the Google places, with unknown schedules.
+      const events = city
+        ? await fetchSalsaVidaEvents(city).catch((error) => {
+            console.error(error);
+            return [];
+          })
+        : [];
       this.unmatched.set(attachEvents(venues, events));
       this.venues.set(venues);
+      // While testing: how often name matching misses (see the browser console).
+      console.info(`SalsaVida "${city}": ${events.length} events, ${this.unmatched().length} not matched to a place`);
     } catch (error) {
       console.error(error);
       this.message.set('Search failed. Check the browser console.');
@@ -189,7 +190,6 @@ export class App {
       const place = prediction.toPlace();
       await place.fetchFields({ fields: ['viewport'] });
       this.map().fitBounds(place.viewport!); // zoom so the whole city / lake / region is in view
-      this.city = prediction.mainText?.text ?? prediction.text.text; // "Cali": the name SalsaVida knows
       this.searchArea(place.viewport!); // find salsa places in the whole city
     } catch (error) {
       console.error(error);

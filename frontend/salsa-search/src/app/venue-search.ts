@@ -6,11 +6,13 @@ import { SalsaEvent, Venue } from './venue';
 
 // All of these are "Pro" fields (5,000 free requests a month, then $32 per 1,000).
 // Ratings, opening hours or websites would be "Enterprise" (pricier), so we don't ask for them.
-const PLACE_FIELDS = ['id', 'displayName', 'location', 'formattedAddress', 'googleMapsURI'];
+// addressComponents is also Pro; we use it to find which city the area is in.
+const PLACE_FIELDS = ['id', 'displayName', 'location', 'formattedAddress', 'googleMapsURI', 'addressComponents'];
 const QUERIES = ['salsa classes', 'salsa dance school', 'salsa bar'];
 
 // Salsa places inside the given area. The 3 queries run at the same time; duplicates are dropped.
-export async function searchPlaces(area: google.maps.LatLngBounds): Promise<Venue[]> {
+// Also returns the area's city: the city most of the found places are in (empty if none found).
+export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ venues: Venue[]; city: string }> {
   const results = await Promise.all(
     QUERIES.map((textQuery) =>
       google.maps.places.Place.searchByText({ textQuery, fields: PLACE_FIELDS, locationRestriction: area, maxResultCount: 20 }),
@@ -18,8 +20,16 @@ export async function searchPlaces(area: google.maps.LatLngBounds): Promise<Venu
   );
 
   const venues = new Map<string, Venue>(); // keyed by place ID, so a place found by 2 queries is kept once
+  const cityCounts = new Map<string, number>(); // city name -> how many places are in it
   for (const { places } of results) {
     for (const place of places) {
+      if (venues.has(place.id)) continue;
+
+      const city = place.addressComponents?.find((c) => c.types.includes('locality'))?.longText;
+      if (city) {
+        cityCounts.set(city, (cityCounts.get(city) ?? 0) + 1);
+      }
+
       venues.set(place.id, {
         id: place.id,
         name: place.displayName ?? '',
@@ -31,7 +41,12 @@ export async function searchPlaces(area: google.maps.LatLngBounds): Promise<Venu
       });
     }
   }
-  return [...venues.values()];
+
+  let city = '';
+  for (const [name, count] of cityCounts) {
+    if (count > (cityCounts.get(city) ?? 0)) city = name;
+  }
+  return { venues: [...venues.values()], city };
 }
 
 // ---------- SalsaVida (free official MCP endpoint, no key) ----------
