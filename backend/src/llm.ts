@@ -136,6 +136,8 @@ function stripFences(text: string): string {
 async function askClaudeCli(prompt: string): Promise<string> {
   const model = process.env.CLAUDE_MODEL || 'haiku';
   const args = ['-p', '--model', model, '--output-format', 'json', '--tools', '', '--no-session-persistence', '--safe-mode'];
+  // Optional: how much Claude "thinks" before answering (low = faster). Unset = Claude Code's default.
+  if (process.env.CLAUDE_EFFORT) args.push('--effort', process.env.CLAUDE_EFFORT);
   const data = JSON.parse(await runCli('claude-cli', process.env.CLAUDE_BIN || 'claude', args, prompt));
 
   // total_cost_usd is the API list-price equivalent; it counts against the subscription's limits, not billed.
