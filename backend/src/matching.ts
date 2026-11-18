@@ -97,7 +97,7 @@ export function norm(text: string): string {
 
 // Same place name? Every word of the shorter name is in the longer one, in any order, accents and case ignored.
 // The shorter name needs 2+ words (or one word of 6+ letters) so a lone "Salsa" doesn't match everything.
-// This is the frontend's old matcher: "Social Club Academia" = "Social Club Academia", "Son Havana" = "Son Havana Bar".
+// This is the frontend's old matcher: "Club Salsa Uno" = "Club Salsa Uno", "Casa Ritmo" = "Casa Ritmo Bar".
 // Generic words DO count here, unlike sharesWord, because the whole name must match.
 export function sameName(a: string, b: string): boolean {
   if (norm(a).trim() !== '' && norm(a).trim() === norm(b).trim()) return true; // identical names always match
@@ -109,8 +109,8 @@ export function sameName(a: string, b: string): boolean {
 
 // Could the event be at another branch than this place? Yes when BOTH sides have their own qualifier:
 // the event's venue (or a "(...)" in its title) has a specific word the place lacks, AND the place has one the
-// event lacks. "Blood Dance Company" + title "(Laureles)" vs place "Blood Dance Company Guayabal": yes.
-// "Timbale" vs "Organización Cultural y Social Timbalé": no (only the place has extra words), so it binds.
+// event lacks. "Escuela Ritmo" + title "(Norte)" vs place "Escuela Ritmo Sur": yes.
+// "Sabor" vs "Centro Cultural Sabor": no (only the place has extra words), so it binds.
 export function differentBranch(e: RawEvent, placeName: string): boolean {
   const parentheses = (e.title.match(/\(([^)]*)\)/g) ?? []).join(' ');
   const eventWords = new Set(specificWords(`${e.venue} ${parentheses}`));
@@ -162,22 +162,22 @@ function readStreet(text: string) {
 }
 
 // Google's street part: its comma-separated pieces up to the first one with a street number, at most 2
-// ("Cra. 73 #44-56, Laureles, …" -> "Cra. 73 #44-56"; "C. Gran Vía de Colón, 36, Centro, …" -> both first pieces).
+// ("Cra. 12 #34-56, Barrio, …" -> "Cra. 12 #34-56"; "C. Gran Paseo, 24, Centro, …" -> both first pieces).
 function googleStreetPart(address: string): string {
   const pieces = address.split(',').slice(0, 2);
   return hasStreetNumber(pieces[0]) ? pieces[0] : pieces.join(' ');
 }
 
-// Is a SalsaVida address ("Hostal Azul Calle Morazán 205 Granada Nicaragua") the same street address as a
-// Google one ("C. Morazán 205, Granada, Nicaragua")? All numbers of Google's street part must be in the
+// Is a SalsaVida address ("Hostal Ejemplo Calle Mayor 205 Pueblo País") the same street address as a
+// Google one ("C. Mayor 205, Pueblo, País")? All numbers of Google's street part must be in the
 // SalsaVida address, and the street type and name must agree when both have them.
-// So "Carrera 73 #44-56" = "Cra. 73 #44-56", but "Calle 10 #20-30" ≠ "Carrera 10 #20-30".
+// So "Carrera 12 #34-56" = "Cra. 12 #34-56", but "Calle 10 #20-30" ≠ "Carrera 10 #20-30".
 export function sameStreet(salsavidaAddress: string, googleAddress: string): boolean {
   const g = readStreet(googleStreetPart(googleAddress));
   const s = readStreet(salsavidaAddress);
   if (g.numbers.length === 0 || !g.numbers.every((n) => s.numbers.includes(n))) return false;
-  // A corner ("Calle 74 Cra. 44 Esquina" = "Cra. 44 #74") names 2 street types and 2 numbers. Only for addresses
-  // without a full plate number (3+ numbers like "Cra. 73 #44-56"), so normal addresses aren't loosened.
+  // A corner ("Calle 52 Cra. 31 Esquina" = "Cra. 31 #52") names 2 street types and 2 numbers. Only for addresses
+  // without a full plate number (3+ numbers like "Cra. 12 #34-56"), so normal addresses aren't loosened.
   const corner = g.numbers.length <= 2 && s.numbers.length <= 2;
   if (g.type && s.type && !(corner ? s.allTypes.has(g.type) : g.type === s.type)) return false;
   if (g.name.length && s.name.length && !g.name.some((w) => s.name.includes(w))) return false;
@@ -185,7 +185,7 @@ export function sameStreet(salsavidaAddress: string, googleAddress: string): boo
 }
 
 // Do the addresses prove they're different places? Both have a street number and they don't match.
-// Address evidence beats a name match: "Blood Dance Company" at Carrera 81 #36-44 isn't the Guayabal branch.
+// Address evidence beats a name match: "Escuela Ritmo" at Carrera 70 #28-31 isn't its other branch at Calle 19 #44-08.
 export function addressesDiffer(salsavidaAddress?: string, googleAddress?: string): boolean {
   return hasStreetNumber(salsavidaAddress) && hasStreetNumber(googleAddress) && !sameStreet(salsavidaAddress!, googleAddress!);
 }
