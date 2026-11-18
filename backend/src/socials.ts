@@ -20,7 +20,9 @@ export async function findSocials(url: string): Promise<Socials> {
   const links = page.html!.match(/https?:\/\/(?:[a-z]+\.)?(?:instagram\.com|facebook\.com|fb\.com|linktr\.ee)\/[^\s"'<>?#\\]+/gi) ?? [];
   for (const link of links) {
     const site = socialSite(link);
-    const clean = link.replace(/\/+$/, ''); // drop trailing slashes so duplicates match
+    // One spelling per link, so "instagram.com/X/" and "https://www.instagram.com/x" count once
+    // (these sites ignore upper/lower case in profile names).
+    const clean = link.toLowerCase().replace(/^http:/, 'https:').replace(/^https:\/\/(?:[a-z]+\.)?/, 'https://www.').replace(/\/+$/, '');
     if (site && isProfile(clean) && !socials[site].includes(clean)) {
       socials[site].push(clean);
     }
