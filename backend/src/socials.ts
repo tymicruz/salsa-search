@@ -22,7 +22,7 @@ export async function findSocials(url: string): Promise<Socials> {
     const site = socialSite(link);
     // One spelling per link, so "instagram.com/X/" and "https://www.instagram.com/x" count once
     // (these sites ignore upper/lower case in profile names).
-    const clean = link.toLowerCase().replace(/^http:/, 'https:').replace(/^https:\/\/(?:[a-z]+\.)?/, 'https://www.').replace(/\/+$/, '');
+    const clean = link.toLowerCase().replace(/^https?:\/\/(?:www\.|m\.|web\.)?/, 'https://www.').replace(/\/+$/, '');
     if (site && isProfile(clean) && !socials[site].includes(clean)) {
       socials[site].push(clean);
     }
