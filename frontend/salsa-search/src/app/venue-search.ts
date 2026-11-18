@@ -46,16 +46,7 @@ export async function searchPlaces(
         cityCounts.set(key, (cityCounts.get(key) ?? 0) + 1);
       }
 
-      found.set(place.id, {
-        id: place.id,
-        name: place.displayName ?? '',
-        address: place.formattedAddress ?? '',
-        lat: place.location!.lat(),
-        lng: place.location!.lng(),
-        googleMapsUri: place.googleMapsURI ?? '',
-        types: place.types ?? [],
-        primaryType: place.primaryType ?? '',
-      });
+      found.set(place.id, toPlace(place));
     }
   }
 
@@ -68,6 +59,46 @@ export async function searchPlaces(
   // turns it into the English name SalsaVida uses ("Nicaragua").
   const country = countryCode ? (new Intl.DisplayNames(['en'], { type: 'region' }).of(countryCode) ?? '') : '';
   return { places: [...found.values()], city, country };
+}
+
+// SalsaVida venues the search didn't find (no matching Google place): one Text Search each, by SalsaVida's
+// address (it starts with the venue name). Each hit is tagged with the event it was looked up for; the backend
+// keeps it only if its address or name really matches. Same Pro fields as the search: one Pro call per venue.
+export async function lookUpSalsaVidaVenues(venues: Venue[], places: Place[], area: google.maps.LatLngBounds) {
+  const known = new Set(places.map((p) => p.id));
+  const pinless = venues.filter((v) => !v.placeIds.length && v.schedule[0]?.address);
+
+  const hits = await Promise.all(
+    pinless.map(async (venue) => {
+      const event = venue.schedule[0];
+      const { places: found } = await google.maps.places.Place.searchByText({
+        textQuery: event.address,
+        fields: PLACE_FIELDS,
+        locationBias: area,
+        maxResultCount: 1,
+      });
+      // Skip places the normal search already has (the backend binds the event to those itself), and places
+      // outside the searched area (SalsaVida sometimes files a venue under the wrong city).
+      return found
+        .filter((p) => !known.has(p.id) && area.contains(p.location!))
+        .map((p) => ({ ...toPlace(p), lookupFor: event.eventId }));
+    }),
+  );
+  return hits.flat();
+}
+
+// A Google Place result -> our Place shape.
+function toPlace(place: google.maps.places.Place): Place {
+  return {
+    id: place.id,
+    name: place.displayName ?? '',
+    address: place.formattedAddress ?? '',
+    lat: place.location!.lat(),
+    lng: place.location!.lng(),
+    googleMapsUri: place.googleMapsURI ?? '',
+    types: place.types ?? [],
+    primaryType: place.primaryType ?? '',
+  };
 }
 
 // ---------- SalsaVida (free official MCP endpoint, no key) ----------
@@ -84,6 +115,7 @@ interface SalsaVidaOccurrence {
   start_date: string; // "2026-11-17", local to the event
   visit_url: string;
   source_modified_at: string;
+  address: string;
 }
 
 // This week's salsa classes and socials in a city. A weekly event appears once per date, so they're
@@ -174,6 +206,7 @@ function toEvents(o: SalsaVidaOccurrence): SalsaEvent[] {
     eventId: o.event_id,
     title: o.title,
     venue: o.venue,
+    address: o.address ?? '',
     kind,
     days: [],
     time: o.end_time ? `${o.start_time}–${o.end_time}` : o.start_time,

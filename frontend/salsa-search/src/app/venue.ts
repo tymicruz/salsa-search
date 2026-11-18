@@ -14,6 +14,7 @@ export interface Place {
   googleMapsUri: string;
   types: string[]; // Google's place types, e.g. ["dance_school", "school"]
   primaryType: string;
+  lookupFor?: number; // set when found by looking up a SalsaVida venue: that event's ID (the backend checks the match)
 }
 
 // One weekly class or social listed on SalsaVida. (Named SalsaEvent because "Event" is already a browser type.)
@@ -21,6 +22,7 @@ export interface SalsaEvent {
   eventId: number; // SalsaVida event ID
   title: string;
   venue: string; // venue name as SalsaVida writes it
+  address: string; // as SalsaVida writes it, e.g. "Son Havana Carrera 73 #44-56 Medellín 050043 Colombia"
   kind: 'class' | 'social';
   days: number[]; // weekdays it happens: 0 = Sunday ... 6 = Saturday, same as Date.getDay()
   time: string; // "18:30–19:30"

@@ -7,7 +7,7 @@ import { WeekStrip } from '../features/week-strip/week-strip';
 import luckyCities from './lucky-cities.json'; // city list for the dice (see docs/lucky-cities.md)
 import { findSocialLinks, synthesizeVenues } from './backend';
 import { hasDay, Place, PIN_STYLES, pinType, SalsaEvent, SocialLinks, Venue } from './venue';
-import { fetchSalsaVidaEvents, rawToVenues, searchPlaces } from './venue-search';
+import { fetchSalsaVidaEvents, lookUpSalsaVidaVenues, rawToVenues, searchPlaces } from './venue-search';
 
 @Component({
   imports: [GoogleMap, MapAdvancedMarker, DiceButton, MapLegend, VenueList, WeekStrip],
@@ -128,7 +128,7 @@ export class App {
       // While testing: how often name matching misses (see the browser console).
       const salsaVidaOnly = venues.filter((v) => !v.placeIds.length).length;
       console.info(`SalsaVida "${city}, ${country}": ${events.length} events, ${salsaVidaOnly} venues not matched to a Google place`);
-      this.improveWithAi(venues, city, places, events); // not awaited: the raw list shows now, the AI version later
+      this.improveWithAi(venues, city, places, events, area); // not awaited: the raw list shows now, the AI version later
     } catch (error) {
       console.error(error);
       this.message.set('Search failed. Check the browser console.');
@@ -138,11 +138,21 @@ export class App {
   }
 
   // Asks the backend's AI to merge the raw rows into readable venues (hosts, summaries, types), then shows them.
+  // First looks up Google places for SalsaVida venues the search missed, so they can get a pin; those
+  // unchecked hits go only to the backend (which verifies them), never straight onto the map.
   // If the backend is off or fails, the raw list just stays.
-  private async improveWithAi(venues: Venue[], city: string, places: Place[], events: SalsaEvent[]) {
+  private async improveWithAi(
+    venues: Venue[],
+    city: string,
+    places: Place[],
+    events: SalsaEvent[],
+    area: google.maps.LatLngBounds,
+  ) {
     this.merging.set(true);
     try {
-      const improved = await synthesizeVenues(city, places, events);
+      const hits = await lookUpSalsaVidaVenues(venues, places, area);
+      console.info(`Looked up ${hits.length} Google places for SalsaVida-only venues`);
+      const improved = await synthesizeVenues(city, [...places, ...hits], events);
       // Only if no newer search replaced the list while the AI was thinking.
       if (this.venues() === venues) {
         this.venues.set(improved);
