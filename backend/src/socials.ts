@@ -9,15 +9,19 @@ export interface Socials {
 }
 
 export async function findSocials(url: string): Promise<Socials> {
-  const socials: Socials = { instagram: [], facebook: [], linktree: [] };
   const page = await fetchPage(url);
   if (page.social) {
+    const socials: Socials = { instagram: [], facebook: [], linktree: [] };
     socials[page.social].push(page.url); // the website IS a social page: return it, don't fetch it
     return socials;
   }
+  return socialLinks(page.html!);
+}
 
-  // Find every Instagram / Facebook / Linktree URL in the page source.
-  const links = page.html!.match(/https?:\/\/(?:[a-z]+\.)?(?:instagram\.com|facebook\.com|fb\.com|linktr\.ee)\/[^\s"'<>?#\\]+/gi) ?? [];
+// Every Instagram / Facebook / Linktree profile link in a page's HTML.
+export function socialLinks(html: string): Socials {
+  const socials: Socials = { instagram: [], facebook: [], linktree: [] };
+  const links = html.match(/https?:\/\/(?:[a-z]+\.)?(?:instagram\.com|facebook\.com|fb\.com|linktr\.ee)\/[^\s"'<>?#\\]+/gi) ?? [];
   for (const link of links) {
     const site = socialSite(link);
     // One spelling per link, so "instagram.com/X/" and "https://www.instagram.com/x" count once

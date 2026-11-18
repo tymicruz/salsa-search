@@ -3,6 +3,7 @@
 import express from 'express';
 import { findSocials } from './socials.ts';
 import { synthesize } from './synthesize.ts';
+import { instagramEvidence, MAX_VENUES, websiteEvidence } from './evidence.ts';
 
 const app = express();
 app.use(express.json({ limit: '1mb' })); // reads JSON request bodies into req.body
@@ -34,6 +35,37 @@ app.post('/synthesize', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(502).json({ error: 'Synthesis failed' });
+  }
+});
+
+// Body: { venues: [{ venueKey, websiteUrl?, salsavidaUrls? }] } (1–15)  ->  { results: Result[] }
+app.post('/evidence/website', async (req, res) => {
+  const venues = req.body?.venues;
+  if (!Array.isArray(venues) || venues.length === 0 || venues.length > MAX_VENUES || venues.some((v) => !v?.venueKey)) {
+    res.status(400).json({ error: `Send { venues: [{ venueKey, websiteUrl?, salsavidaUrls? }] }, 1–${MAX_VENUES} venues` });
+    return;
+  }
+  try {
+    res.json({ results: await websiteEvidence(venues) });
+  } catch (err) {
+    console.error(err);
+    res.status(502).json({ error: 'Website evidence failed' });
+  }
+});
+
+// Body: { venues: [{ venueKey, instagramUrl }] } (1–15)  ->  { results: Result[] }
+app.post('/evidence/instagram', async (req, res) => {
+  const venues = req.body?.venues;
+  const valid = (v: any) => v?.venueKey && typeof v.instagramUrl === 'string' && /instagram\.com\/[^/?#]+/i.test(v.instagramUrl);
+  if (!Array.isArray(venues) || venues.length === 0 || venues.length > MAX_VENUES || !venues.every(valid)) {
+    res.status(400).json({ error: `Send { venues: [{ venueKey, instagramUrl }] }, 1–${MAX_VENUES} venues` });
+    return;
+  }
+  try {
+    res.json({ results: await instagramEvidence(venues) });
+  } catch (err) {
+    console.error(err);
+    res.status(502).json({ error: 'Instagram evidence failed' });
   }
 });
 

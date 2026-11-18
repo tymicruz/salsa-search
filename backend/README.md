@@ -31,6 +31,8 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 | `GEMINI_MODEL` | default `gemini-3.5-flash-lite` (cheap, pinned), for `gemini` and `vertex`. If changed, update the prices in `src/llm.ts` |
 | `OPENAI_API_KEY` | only for `openai`: from https://platform.openai.com/api-keys |
 | `OPENAI_MODEL` | default `gpt-6-luna` (cheap, pinned). If changed, update the prices in `src/llm.ts` |
+| `APIFY_TOKEN` | for Instagram evidence: from https://console.apify.com/settings/integrations |
+| `APIFY_MAX_PER_DAY` | most Instagram profiles scraped per day, default 30 (≈ $0.08/day at $0.0026 each) |
 | `PORT` | default 3000 |
 
 ## Claude CLI (local prototyping only)
@@ -122,6 +124,39 @@ How it stays honest:
   - Addresses (Google's `places[].address` and SalsaVida's `events[].address`) are used only by code and never sent to the LLM.
 
 **Speed (2026-11-17, claude-cli Haiku):** about 30s for 60 places + 6 events (Puerto Escondido) and about 56s for 60 places + 23 events (Medellín). The events were real SalsaVida data; the places were synthetic test rows. Each call logs `[synthesize] <area>: N places + M events -> K venues in Xs`.
+
+### POST /evidence/website and POST /evidence/instagram
+Checks whether a venue really offers salsa, from its own website and Instagram. Nothing is stored. The frontend calls these after `/synthesize` for venues without a SalsaVida schedule (at most 15 per call), and on click for a venue not checked yet.
+
+```jsonc
+// POST /evidence/website  request
+{ "venues": [{ "venueKey": "ChIJ... or sv-123", "websiteUrl": "https://...", "salsavidaUrls": ["https://www.salsavida.com/..."] }] }
+// POST /evidence/instagram  request
+{ "venues": [{ "venueKey": "...", "instagramUrl": "https://www.instagram.com/..." }] }
+// response (both)
+{ "results": [{
+    "venueKey": "...",
+    "verdict": "evidence",          // evidence -> show | no_evidence -> hide | needs_instagram -> check Instagram first | not_checked -> keep as today
+    "reason": "salsa found on website",
+    "facts": [{ "kind": "class", "dance": "salsa", "audience": "adults", "day": "Martes y jueves", "time": "19:00 - 20:00",
+                "price": "120 soles al mes", "quote": "Clases de salsa para adultos…", "sourceUrl": "https://..." }],
+    "website": { "url": "...", "pagesRead": ["...", "..."] },
+    "instagram": { "url": "...", "bio": "...", "lastPostDate": "2026-11-13" } }] }
+```
+- **Website:** reads the home page plus up to 2 same-site pages whose link looks like a schedule, class or price page (same polite fetching as `/socials`). With no website but a SalsaVida page, it reads that page to find the venue's website (a link, or the domain of its contact email) and Instagram. If the "website" is an Instagram link, it goes straight to `needs_instagram`.
+- **Instagram:** one Apify run (apify/instagram-profile-scraper) for all profiles in the request: bio + latest 12 posts. `lastPostDate` comes from the post dates. At most `APIFY_MAX_PER_DAY` profiles a day; beyond that the result is `not_checked`, "daily Instagram limit reached".
+- **Facts:** the LLM lists only salsa facts:
+  - kind: `class`, `social` (partner dancing), `live_music` or `mention`;
+  - audience: `adults`, `kids` or `unclear`;
+  - day, time and price;
+  - a quote.
+  Code keeps a fact only if its quote appears word for word in the page or caption it names. Time and price are kept only if they're written in that text too.
+- **Verdict, decided by code:**
+  - `evidence`: at least one salsa fact that isn't kids-only.
+  - `no_evidence`: pages read but no salsa, or only kids' salsa.
+  - `needs_instagram`: no salsa on the website, but it links an Instagram that hasn't been checked yet.
+  - `not_checked`: nothing could be read: no website, unreachable, robots.txt, the LLM failed, or the daily limit was reached. Never hidden for that.
+- **Speed:** one LLM call per venue, 3 at a time. 7 real venues took 19.5s. One call for all venues was slower: 5 venues took 53s vs 21s, because the model thinks much longer on one big prompt. The Instagram wave (1 profile) took about 10s.
 
 ### POST /socials
 Fetches the website once and returns the Instagram, Facebook and Linktree links it finds.
