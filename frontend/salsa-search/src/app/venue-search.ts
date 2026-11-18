@@ -23,8 +23,10 @@ const PLACE_FIELDS = [
 const QUERIES = ['salsa classes', 'salsa dance school'];
 
 // Salsa places inside the given area. The queries run at the same time; duplicates are dropped.
-// Also returns the area's city: the city most of the found places are in (empty if none found).
-export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ places: Place[]; city: string }> {
+// Also returns the area's city and country: where most of the found places are (empty if none found).
+export async function searchPlaces(
+  area: google.maps.LatLngBounds,
+): Promise<{ places: Place[]; city: string; country: string }> {
   const results = await Promise.all(
     QUERIES.map((textQuery) =>
       google.maps.places.Place.searchByText({ textQuery, fields: PLACE_FIELDS, locationRestriction: area, maxResultCount: 20 }),
@@ -32,14 +34,16 @@ export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ pl
   );
 
   const found = new Map<string, Place>(); // keyed by place ID, so a place found by 2 queries is kept once
-  const cityCounts = new Map<string, number>(); // city name -> how many places are in it
+  const cityCounts = new Map<string, number>(); // "city|country code" -> how many places are in it
   for (const { places } of results) {
     for (const place of places) {
       if (found.has(place.id)) continue;
 
       const city = place.addressComponents?.find((c) => c.types.includes('locality'))?.longText;
-      if (city) {
-        cityCounts.set(city, (cityCounts.get(city) ?? 0) + 1);
+      const countryCode = place.addressComponents?.find((c) => c.types.includes('country'))?.shortText; // "NI"
+      if (city && countryCode) {
+        const key = `${city}|${countryCode}`;
+        cityCounts.set(key, (cityCounts.get(key) ?? 0) + 1);
       }
 
       found.set(place.id, {
@@ -55,11 +59,15 @@ export async function searchPlaces(area: google.maps.LatLngBounds): Promise<{ pl
     }
   }
 
-  let city = '';
-  for (const [name, count] of cityCounts) {
-    if (count > (cityCounts.get(city) ?? 0)) city = name;
+  let best = '';
+  for (const [key, count] of cityCounts) {
+    if (count > (cityCounts.get(best) ?? 0)) best = key;
   }
-  return { places: [...found.values()], city };
+  const [city = '', countryCode = ''] = best.split('|');
+  // The country code ("NI") doesn't depend on the browser's language; Intl.DisplayNames (built into browsers)
+  // turns it into the English name SalsaVida uses ("Nicaragua").
+  const country = countryCode ? (new Intl.DisplayNames(['en'], { type: 'region' }).of(countryCode) ?? '') : '';
+  return { places: [...found.values()], city, country };
 }
 
 // ---------- SalsaVida (free official MCP endpoint, no key) ----------
@@ -80,15 +88,22 @@ interface SalsaVidaOccurrence {
 
 // This week's salsa classes and socials in a city. A weekly event appears once per date, so they're
 // grouped by event ID into one SalsaEvent with its weekdays.
-export async function fetchSalsaVidaEvents(city: string): Promise<SalsaEvent[]> {
+export async function fetchSalsaVidaEvents(city: string, country: string): Promise<SalsaEvent[]> {
+  // Same-named cities are common (Granada in Spain and in Nicaragua), so first find SalsaVida's ID
+  // for this city in this country.
+  const location = await findSalsaVidaLocation(city, country);
+  if (!location) {
+    return []; // SalsaVida doesn't list this city: show no schedules rather than another country's
+  }
+
   const today = new Date();
   const inSixDays = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 6);
 
   const occurrences: SalsaVidaOccurrence[] = [];
   let cursor: string | undefined; // SalsaVida sends results in pages; cursor asks for the next one
   do {
-    const page = await callSalsaVida({
-      location: city,
+    const page = await callSalsaVida('search_events', {
+      location: String(location),
       date_from: isoDate(today),
       date_to: isoDate(inSixDays),
       dance: 'salsa',
@@ -113,12 +128,28 @@ export async function fetchSalsaVidaEvents(city: string): Promise<SalsaEvent[]> 
   return [...events.values()].flat();
 }
 
+// SalsaVida's ID for "<city>" in "<country>". Each of its locations lists its country among its ancestors.
+async function findSalsaVidaLocation(city: string, country: string): Promise<number | undefined> {
+  const { results } = await callSalsaVida('search_locations', { query: city, language: 'en' });
+  const inCountry = results.filter((r: SalsaVidaLocation) => r.ancestors.some((a) => plain(a.name) === plain(country)));
+  // Prefer the exact city name: searching "Cali" also finds "Baja California".
+  return (inCountry.find((r: SalsaVidaLocation) => plain(r.name) === plain(city)) ?? inCountry[0])?.id;
+}
+
+// One SalsaVida location (only the fields we use).
+interface SalsaVidaLocation {
+  id: number;
+  name: string;
+  ancestors: { name: string }[]; // e.g. [{ name: "Nicaragua" }, { name: "South America" }]
+}
+
+// Calls one SalsaVida tool ('search_events' or 'search_locations').
 // SalsaVida allows browser calls from any site (CORS), so no proxy or backend is needed.
-async function callSalsaVida(args: object) {
+async function callSalsaVida(tool: string, args: object) {
   const response = await fetch('https://mcp.salsavida.com/mcp', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_events', arguments: args } }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }),
   });
   // The answer is a server-sent event: a line "data: {json}".
   const text = await response.text();
@@ -204,8 +235,12 @@ function sameName(a: string, b: string) {
 
 // "Café Ritmo & Son!" -> {"cafe", "ritmo", "son"} (accents, case and short words like "y" dropped)
 function words(name: string) {
-  const plain = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  return new Set(plain.split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+  return new Set(plain(name).split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+}
+
+// "Bogotá" -> "bogota": accents and capitals removed, so names compare equal however they're written.
+function plain(text: string) {
+  return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
 // ---------- Dates ----------

@@ -114,10 +114,10 @@ export class App {
     this.message.set('');
     this.selectedId.set(null);
     try {
-      const { places, city } = await searchPlaces(area);
+      const { places, city, country } = await searchPlaces(area);
       // If SalsaVida fails (or no city was found), still show the Google places, with unknown schedules.
       const events = city
-        ? await fetchSalsaVidaEvents(city).catch((error) => {
+        ? await fetchSalsaVidaEvents(city, country).catch((error) => {
             console.error(error);
             return [];
           })
@@ -127,7 +127,7 @@ export class App {
       this.links.set({});
       // While testing: how often name matching misses (see the browser console).
       const salsaVidaOnly = venues.filter((v) => !v.placeIds.length).length;
-      console.info(`SalsaVida "${city}": ${events.length} events, ${salsaVidaOnly} venues not matched to a Google place`);
+      console.info(`SalsaVida "${city}, ${country}": ${events.length} events, ${salsaVidaOnly} venues not matched to a Google place`);
       this.improveWithAi(venues, city, places, events); // not awaited: the raw list shows now, the AI version later
     } catch (error) {
       console.error(error);
