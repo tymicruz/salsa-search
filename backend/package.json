@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node --env-file=.env src/server.ts",
     "dev": "node --watch --env-file=.env src/server.ts",
-    "check": "tsc"
+    "check": "tsc",
+    "test": "node --test \"test/*.test.ts\""
   },
   "dependencies": {
     "express": "^5.2.0",

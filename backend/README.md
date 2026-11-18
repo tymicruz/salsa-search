@@ -4,6 +4,7 @@ A small Node + TypeScript API used by the Angular app. It stores nothing: no dat
 
 - **Express**: the most common Node web framework, so tutorials and answers are easy to find.
 - **No build step**: Node 24 runs `.ts` files directly (it strips the types). `npm run check` runs `tsc` to type-check.
+- **Tests**: `npm test` runs `test/*.test.ts` with Node's built-in test runner (no extra packages). `test/sameStreet.test.ts` holds real SalsaVida → Google address pairs that must match or must not. Add a pair whenever a real address goes wrong.
 - **google-auth-library**: Google's official package. It reads your `gcloud` login (Application Default Credentials) and turns it into short-lived access tokens for Vertex AI. Doing that by hand would mean re-implementing token refresh.
 
 ## Run
