@@ -5,6 +5,7 @@
 import { askLLM } from './llm.ts';
 import {
   acceptLookups,
+  addressesDiffer,
   BUILDING_METERS,
   canJoin,
   differentBranch,
@@ -238,7 +239,8 @@ function checkAnswer(
   // 1. SalsaVida's address is the same street address as exactly one place (if several, the one with the same name);
   // 2. otherwise the venue name matches exactly one place, without two different qualifiers (see differentBranch).
   const boundPlace = new Map<string, string>(); // event ref -> place ref
-  const nameMatches = (e: RawEvent, p: RawPlace) => sameName(e.venue, p.name) && !differentBranch(e, p.name);
+  const nameMatches = (e: RawEvent, p: RawPlace) =>
+    sameName(e.venue, p.name) && !differentBranch(e, p.name) && !addressesDiffer(e.address, p.address);
   let byAddress = 0;
   for (const [eRef, e] of eventRefs) {
     const atAddress = [...placeRefs].filter(([, p]) => !!e.address && !!p.address && sameStreet(e.address, p.address));
@@ -282,8 +284,10 @@ function checkAnswer(
       }
       const e = eventRefs.get(r)!;
       const matches = names.some((n) => sameName(e.venue, n) || sharesWord(`${e.venue} ${e.title}`, n));
-      if (!matches) dropped.events++;
-      return (e === firstEvent && okPlaces.length === 0) || matches;
+      // Not with a place whose street address proves it's somewhere else (the LLM merges by name only).
+      const contradicted = okPlaces.some((q: string) => addressesDiffer(e.address, placeRefs.get(q)!.address));
+      if (!matches || contradicted) dropped.events++;
+      return ((e === firstEvent && okPlaces.length === 0) || matches) && !contradicted;
     });
     dropped.places += myPlaces.length - okPlaces.length; // these come back below as their own venue
     if (okPlaces.length === 0 && okEvents.length === 0) continue;

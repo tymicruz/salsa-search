@@ -176,9 +176,18 @@ export function sameStreet(salsavidaAddress: string, googleAddress: string): boo
   const g = readStreet(googleStreetPart(googleAddress));
   const s = readStreet(salsavidaAddress);
   if (g.numbers.length === 0 || !g.numbers.every((n) => s.numbers.includes(n))) return false;
-  if (g.type && s.allTypes.size && !s.allTypes.has(g.type)) return false; // a corner ("Calle 74 Cra. 44") has 2 types
+  // A corner ("Calle 74 Cra. 44 Esquina" = "Cra. 44 #74") names 2 street types and 2 numbers. Only for addresses
+  // without a full plate number (3+ numbers like "Cra. 73 #44-56"), so normal addresses aren't loosened.
+  const corner = g.numbers.length <= 2 && s.numbers.length <= 2;
+  if (g.type && s.type && !(corner ? s.allTypes.has(g.type) : g.type === s.type)) return false;
   if (g.name.length && s.name.length && !g.name.some((w) => s.name.includes(w))) return false;
   return true;
+}
+
+// Do the addresses prove they're different places? Both have a street number and they don't match.
+// Address evidence beats a name match: "Blood Dance Company" at Carrera 81 #36-44 isn't the Guayabal branch.
+export function addressesDiffer(salsavidaAddress?: string, googleAddress?: string): boolean {
+  return hasStreetNumber(salsavidaAddress) && hasStreetNumber(googleAddress) && !sameStreet(salsavidaAddress!, googleAddress!);
 }
 
 // Google lookups the frontend ran for SalsaVida-only venues ("<venue> <address>"), tagged lookupFor = eventId.
@@ -197,7 +206,7 @@ export function acceptLookups(places: RawPlace[], events: RawEvent[]): RawPlace[
     sent++;
     const e = events.find((ev) => ev.id === p.lookupFor);
     const byAddress = !!e?.address && !!p.address && sameStreet(e.address, p.address);
-    const byName = !!e && sameName(e.venue, p.name) && !differentBranch(e, p.name);
+    const byName = !!e && sameName(e.venue, p.name) && !differentBranch(e, p.name) && !addressesDiffer(e.address, p.address);
     const duplicate = normalIds.has(p.id) || kept.some((k) => k.id === p.id);
     if ((byAddress || byName) && !duplicate) kept.push(p);
   }
