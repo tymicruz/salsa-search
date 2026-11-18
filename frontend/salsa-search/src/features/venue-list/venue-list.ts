@@ -17,6 +17,7 @@ export class VenueList {
   loading = input(false);
   merging = input(false); // the backend's AI is still merging this search's venues
   links = input<SocialLinks | 'loading' | 'error'>(); // social links of the selected venue
+  checking = input<string[]>([]); // venues whose website / Instagram the backend is checking now
   // output() = an event the parent listens to: (picked)="..."
   picked = output<Venue>();
 
@@ -62,6 +63,12 @@ export class VenueList {
     return this.mondayFirst(days)
       .map((d) => DAY_NAMES[d])
       .join(', ');
+  }
+
+  // A venue's checked salsa facts from one source: its website, or its Instagram.
+  protected factsFrom(venue: Venue, source: string) {
+    const facts = venue.check?.facts ?? [];
+    return facts.filter((f) => f.sourceUrl.includes('instagram.com') === (source === 'instagram'));
   }
 
   private mondayFirst(days: number[]) {

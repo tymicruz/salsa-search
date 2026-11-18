@@ -8,6 +8,9 @@
       @if (merging()) {
         <span class="size-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin"></span>
         AI is sorting them…
+      } @else if (checking().length) {
+        <span class="size-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin"></span>
+        checking {{ checking().length }} websites…
       }
     }
   </p>
@@ -55,7 +58,9 @@
       <p class="text-xs text-gray-700">{{ venue.hosts.join(' · ') }}</p>
     }
     <p class="text-xs text-gray-500">
-      {{ style(venue).label }}@if (!venue.schedule.length && venue.offers.length) { · AI guess}
+      {{ style(venue).label }}
+      @if (venue.check?.verdict === 'evidence') { · {{ venue.check.reason }} }
+      @else if (!venue.schedule.length && venue.offers.length) { · AI guess }
       @if (venue.lat === undefined) { · only on SalsaVida, not on the map}
     </p>
     @if (venue.summary) {
@@ -86,7 +91,41 @@
         }
       }
       @if (!venue.schedule.length) {
-        <p class="mt-2 text-xs text-gray-500">No schedule found on SalsaVida. Check the place's own pages.</p>
+        <p class="mt-2 text-xs text-gray-500">No schedule found on SalsaVida.</p>
+      }
+
+      <!-- What the venue's own website / Instagram says (checked by the backend; quotes are word for word). -->
+      @if (checking().includes(venue.id)) {
+        <p class="flex items-center gap-2 mt-2 text-xs text-gray-500">
+          <span class="size-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin"></span>
+          Checking their website / Instagram…
+        </p>
+      } @else if (venue.check) {
+        @for (source of ['website', 'instagram']; track source) {
+          @if (factsFrom(venue, source).length) {
+            <h3 class="mt-3 mb-1 text-xs font-medium uppercase text-gray-500">
+              {{ source === 'website' ? 'From their website' : 'Instagram' }}
+            </h3>
+            @for (fact of factsFrom(venue, source); track $index) {
+              <div class="mb-2 text-xs">
+                <p class="text-[#202124]">
+                  {{ fact.kind === 'live_music' ? 'live music' : fact.kind }}
+                  @if (fact.day) { · {{ fact.day }}}
+                  @if (fact.time) { · {{ fact.time }}}
+                  @if (fact.price) { · {{ fact.price }}}
+                  @if (fact.audience === 'kids') { · kids }
+                </p>
+                <p class="text-gray-600">
+                  "{{ fact.quote }}"
+                  <a [href]="fact.sourceUrl" target="_blank" class="text-[#1a73e8] hover:underline" (click)="$event.stopPropagation()">source</a>
+                </p>
+              </div>
+            }
+          }
+        }
+        @if (!venue.check.facts.length) {
+          <p class="mt-2 text-xs text-gray-500">Checked: {{ venue.check.reason }}</p>
+        }
       }
 
       @if (venue.evidence.length) {

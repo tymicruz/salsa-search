@@ -5,8 +5,18 @@ import { MapLegend } from '../features/map-legend/map-legend';
 import { VenueList } from '../features/venue-list/venue-list';
 import { WeekStrip } from '../features/week-strip/week-strip';
 import luckyCities from './lucky-cities.json'; // city list for the dice (see docs/lucky-cities.md)
-import { findSocialLinks, synthesizeVenues } from './backend';
-import { hasDay, Place, PIN_STYLES, pinType, SalsaEvent, SocialLinks, Venue } from './venue';
+import { checkInstagram, checkWebsites, findSocialLinks, synthesizeVenues } from './backend';
+import {
+  EvidenceCheck,
+  hasDay,
+  offersFromFacts,
+  Place,
+  PIN_STYLES,
+  pinType,
+  SalsaEvent,
+  SocialLinks,
+  Venue,
+} from './venue';
 import { fetchSalsaVidaEvents, lookUpSalsaVidaVenues, rawToVenues, searchPlaces } from './venue-search';
 
 @Component({
@@ -42,6 +52,10 @@ export class App {
   protected areaChanged = signal(true); // map moved since the last search: show "Search this area"
   // Social links per place ID, loaded when a place is first clicked.
   protected links = signal<Record<string, SocialLinks | 'loading' | 'error'>>({});
+  protected checking = signal<string[]>([]); // IDs of venues whose website / Instagram is being checked now
+
+  // Venues whose own website / Instagram showed no salsa (or only kids' salsa) are hidden everywhere.
+  private shownVenues = computed(() => this.venues().filter((v) => v.check?.verdict !== 'no_evidence'));
 
   protected selectedId = signal<string | null>(null); // the clicked pin / list row
   private bounds = signal<google.maps.LatLngBounds | null>(null); // the area the map shows
@@ -54,7 +68,7 @@ export class App {
   // The sidebar list: venues inside the map's current view, with something on the clicked day.
   // SalsaVida-only venues have no location, so they're always listed.
   protected venuesInView = computed(() =>
-    this.venues().filter(
+    this.shownVenues().filter(
       (v) => (v.lat === undefined || this.bounds()?.contains({ lat: v.lat, lng: v.lng! })) && hasDay(v, this.pinnedDay()),
     ),
   );
@@ -62,7 +76,7 @@ export class App {
   // One colored pin per venue that has a location. computed() re-runs whenever a signal it reads changes
   // (here: venues, selectedId and activeDay).
   protected pins = computed(() =>
-    this.venues()
+    this.shownVenues()
       .filter((v) => v.lat !== undefined)
       .map((venue) => ({ venue, position: { lat: venue.lat!, lng: venue.lng! }, pin: this.makePin(venue) })),
   );
@@ -138,8 +152,8 @@ export class App {
   }
 
   // Asks the backend's AI to merge the raw rows into readable venues (hosts, summaries, types), then shows them.
-  // First looks up Google places for SalsaVida venues the search missed, so they can get a pin; those
-  // unchecked hits go only to the backend (which verifies them), never straight onto the map.
+  // First looks up a Google place for each SalsaVida venue (by its address), so it can get the right pin;
+  // those unchecked hits go only to the backend (which verifies them), never straight onto the map.
   // If the backend is off or fails, the raw list just stays.
   private async improveWithAi(
     venues: Venue[],
@@ -151,16 +165,55 @@ export class App {
     this.merging.set(true);
     try {
       const hits = await lookUpSalsaVidaVenues(venues, places, area);
-      console.info(`Looked up ${hits.length} Google places for SalsaVida-only venues`);
+      console.info(`SalsaVida lookups: ${hits.length} new Google places sent for checking`);
       const improved = await synthesizeVenues(city, [...places, ...hits], events);
       // Only if no newer search replaced the list while the AI was thinking.
       if (this.venues() === venues) {
         this.venues.set(improved);
+        // Then check, in the background, the venues with no SalsaVida schedule (at most 15, ones with a website first).
+        const unscheduled = improved.filter((v) => !v.schedule.length);
+        const websitesFirst = [...unscheduled.filter((v) => v.website), ...unscheduled.filter((v) => !v.website)];
+        this.checkEvidence(websitesFirst.slice(0, 15)); // not awaited
       }
     } catch (error) {
       console.error(error);
     }
     this.merging.set(false);
+  }
+
+  // Asks the backend whether these venues really offer salsa: their website first, then Instagram for those
+  // whose website had none but links an Instagram. Each answer is added to its venue as it arrives.
+  // If the backend fails, the venues just stay as they are (never hidden for that).
+  private async checkEvidence(venues: Venue[]) {
+    if (!venues.length) return;
+    const ids = venues.map((v) => v.id);
+    this.checking.update((now) => [...now, ...ids]);
+    try {
+      const fromWebsites = await checkWebsites(venues);
+      this.applyChecks(fromWebsites);
+
+      const profiles = [...fromWebsites]
+        .filter(([, check]) => check.verdict === 'needs_instagram' && check.instagram?.url)
+        .map(([venueKey, check]) => ({ venueKey, instagramUrl: check.instagram!.url }));
+      if (profiles.length) {
+        this.applyChecks(await checkInstagram(profiles));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+    this.checking.update((now) => now.filter((id) => !ids.includes(id)));
+  }
+
+  // Adds each check to its venue. Salsa facts for adults also count as offers (so they color the pin).
+  private applyChecks(checks: Map<string, EvidenceCheck>) {
+    this.venues.update((list) =>
+      list.map((v) => {
+        const check = checks.get(v.id);
+        if (!check) return v;
+        const offers = [...new Set([...v.offers, ...offersFromFacts(check.facts)])]; // a Set drops repeats
+        return { ...v, check, offers };
+      }),
+    );
   }
 
   // Pin or row clicked: select it and move the map to it. Clicking it again unselects.
@@ -176,9 +229,13 @@ export class App {
     if (!this.links()[venue.id]) {
       this.loadLinks(venue);
     }
+    // Not checked by the background check (it does at most 15): check this one now.
+    if (!venue.check && !venue.schedule.length && !this.checking().includes(venue.id)) {
+      this.checkEvidence([venue]);
+    }
   }
 
-  // First click on a place: get its website from Google, then Instagram/Facebook links from the backend.
+  // First click on a place: Instagram/Facebook links found on its website (from the backend).
   private async loadLinks(venue: Venue) {
     this.links.update((all) => ({ ...all, [venue.id]: 'loading' }));
     try {

@@ -4,8 +4,7 @@ import { offersFromSchedule, Place, SalsaEvent, Venue } from './venue';
 
 // ---------- Google Places (New) Text Search ----------
 
-// All of these are "Pro" fields (5,000 free requests a month, then $32 per 1,000).
-// Ratings, opening hours or websites would be "Enterprise" (pricier), so we don't ask for them.
+// These are "Pro" fields (5,000 free requests a month, then $32 per 1,000).
 // addressComponents is also Pro; we use it to find which city the area is in.
 // formattedAddress (Pro) lets the backend join places at the same street address.
 // types and primaryType are cheaper Essentials fields; they help the backend's AI guess the kind of place.
@@ -19,6 +18,10 @@ const PLACE_FIELDS = [
   'types',
   'primaryType',
 ];
+// The main search also asks for the website, so the backend can check each place for salsa evidence.
+// websiteURI is an "Enterprise" field: it bills the whole request as Text Search Enterprise
+// (1,000 free requests a month, then $35 per 1,000). The SalsaVida lookups below stay on Pro.
+const SEARCH_FIELDS = [...PLACE_FIELDS, 'websiteURI'];
 // Google finds the schools and classes; socials come from SalsaVida (a bar search mostly found bars, not socials).
 const QUERIES = ['salsa classes', 'salsa dance school'];
 
@@ -29,7 +32,7 @@ export async function searchPlaces(
 ): Promise<{ places: Place[]; city: string; country: string }> {
   const results = await Promise.all(
     QUERIES.map((textQuery) =>
-      google.maps.places.Place.searchByText({ textQuery, fields: PLACE_FIELDS, locationRestriction: area, maxResultCount: 20 }),
+      google.maps.places.Place.searchByText({ textQuery, fields: SEARCH_FIELDS, locationRestriction: area, maxResultCount: 20 }),
     ),
   );
 
@@ -61,15 +64,17 @@ export async function searchPlaces(
   return { places: [...found.values()], city, country };
 }
 
-// SalsaVida venues the search didn't find (no matching Google place): one Text Search each, by SalsaVida's
-// address (it starts with the venue name). Each hit is tagged with the event it was looked up for; the backend
-// keeps it only if its address or name really matches. Same Pro fields as the search: one Pro call per venue.
+// Every SalsaVida venue gets one Text Search by SalsaVida's address (it starts with the venue name):
+// those the search didn't find at all, and those matched only by name (the name match can be a different
+// branch at another address). Each hit is tagged with the event it was looked up for; the backend keeps it
+// only if its address or name really matches. Same Pro fields as the main search minus the website:
+// one Pro call per SalsaVida venue.
 export async function lookUpSalsaVidaVenues(venues: Venue[], places: Place[], area: google.maps.LatLngBounds) {
   const known = new Set(places.map((p) => p.id));
-  const pinless = venues.filter((v) => !v.placeIds.length && v.schedule[0]?.address);
+  const fromSalsaVida = venues.filter((v) => v.schedule[0]?.address);
 
   const hits = await Promise.all(
-    pinless.map(async (venue) => {
+    fromSalsaVida.map(async (venue) => {
       const event = venue.schedule[0];
       const { places: found } = await google.maps.places.Place.searchByText({
         textQuery: event.address,
@@ -98,6 +103,7 @@ function toPlace(place: google.maps.places.Place): Place {
     googleMapsUri: place.googleMapsURI ?? '',
     types: place.types ?? [],
     primaryType: place.primaryType ?? '',
+    website: place.websiteURI ?? '', // only the main search asks for it; lookups leave it ''
   };
 }
 
@@ -252,13 +258,14 @@ function newVenue(id: string, name: string, place?: Place): Venue {
     lat: place?.lat,
     lng: place?.lng,
     googleMapsUri: place?.googleMapsUri ?? '',
+    website: place?.website ?? '',
     schedule: [],
     evidence: [],
   };
 }
 
 // Same place if every word of the shorter name is in the longer one, in any order:
-// "Son Havana" matches "Son Havana Bar"; "Rumba y Salsa Salsa School" matches "Salsa school Rumba y Salsa Medellín".
+// "Casa Ritmo" matches "Casa Ritmo Bar"; "Ritmo y Sabor School" matches "School Sabor y Ritmo Centro" (invented examples).
 // The shorter name needs 2+ words (or one long word) so a generic "Salsa" doesn't match everything.
 function sameName(a: string, b: string) {
   const [short, long] = [words(a), words(b)].sort((x, y) => x.size - y.size);

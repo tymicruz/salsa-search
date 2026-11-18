@@ -1,10 +1,10 @@
 // Calls to our own backend (backend/, see backend/README.md). It runs on the owner's machine during development.
-import { Place, SalsaEvent, SocialLinks, Venue } from './venue';
+import { EvidenceCheck, Place, SalsaEvent, SocialLinks, Venue } from './venue';
 
 const BACKEND_URL = 'http://localhost:3000';
 
 // POST /synthesize: the backend's AI merges one search's raw rows into readable venues
-// (e.g. 3 Google pins for "PM" + "Flavia's Dance School at PM" on SalsaVida -> one venue).
+// (e.g. 3 Google pins for one studio + "Ana's Dance School at <that studio>" on SalsaVida -> one venue; invented).
 // Schedules, links and pin locations are copied by the backend's code, never written by the AI.
 // Places it judges "not salsa" are simply left out of the answer. Takes ~30–60 s.
 export async function synthesizeVenues(area: string, places: Place[], events: SalsaEvent[]): Promise<Venue[]> {
@@ -16,24 +16,43 @@ export async function synthesizeVenues(area: string, places: Place[], events: Sa
   const { venues } = await post('/synthesize', body);
 
   // The backend's schedule items have no "venue" field; ours do, so fill it with the venue's name.
+  // The website comes from the venue's first Google place (the backend doesn't return it).
   return venues.map((v: Venue) => ({
     ...v,
     hosts: v.hosts ?? [],
     googleMapsUri: v.googleMapsUri ?? '',
+    website: places.find((p) => p.id === v.placeIds[0])?.website ?? '',
     evidence: v.evidence ?? [],
     schedule: v.schedule.map((item) => ({ ...item, venue: v.name })),
   }));
 }
 
-// Website (from Google, only when a place is clicked) + Instagram/Facebook/Linktree links found on it (POST /socials).
+// POST /evidence/website: the backend reads each venue's own website (or its SalsaVida page, to find one)
+// and says whether it really offers salsa for adults. One request for up to 15 venues; ~20 s.
+export async function checkWebsites(venues: Venue[]): Promise<Map<string, EvidenceCheck>> {
+  const body = {
+    venues: venues.map((v) => ({
+      venueKey: v.id,
+      websiteUrl: v.website || undefined,
+      salsavidaUrls: v.schedule.map((e) => e.url),
+    })),
+  };
+  return byVenue(await post('/evidence/website', body));
+}
+
+// POST /evidence/instagram: the same check on Instagram profiles (bio + latest posts). ~10 s.
+export async function checkInstagram(profiles: { venueKey: string; instagramUrl: string }[]) {
+  return byVenue(await post('/evidence/instagram', { venues: profiles }));
+}
+
+// { results: [...] } -> a Map from venue ID to its check.
+function byVenue(data: { results: (EvidenceCheck & { venueKey: string })[] }) {
+  return new Map(data.results.map(({ venueKey, ...check }) => [venueKey, check]));
+}
+
+// Website (from the Google search) + Instagram/Facebook/Linktree links found on it (POST /socials).
 export async function findSocialLinks(venue: Venue): Promise<SocialLinks> {
-  if (!venue.placeIds.length) {
-    return { website: '', instagram: [], facebook: [], linktree: [] }; // SalsaVida-only venue: no Google place
-  }
-  // websiteURI is an Enterprise field (pricier), so it's fetched for one clicked place, never in the search.
-  const place = new google.maps.places.Place({ id: venue.placeIds[0] });
-  await place.fetchFields({ fields: ['websiteURI'] });
-  const website = place.websiteURI ?? '';
+  const website = venue.website;
   if (!website) {
     return { website, instagram: [], facebook: [], linktree: [] };
   }

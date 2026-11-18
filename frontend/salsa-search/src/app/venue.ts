@@ -14,6 +14,7 @@ export interface Place {
   googleMapsUri: string;
   types: string[]; // Google's place types, e.g. ["dance_school", "school"]
   primaryType: string;
+  website: string; // Google's websiteURI ('' if none); used to check the place for salsa evidence
   lookupFor?: number; // set when found by looking up a SalsaVida venue: that event's ID (the backend checks the match)
 }
 
@@ -22,7 +23,7 @@ export interface SalsaEvent {
   eventId: number; // SalsaVida event ID
   title: string;
   venue: string; // venue name as SalsaVida writes it
-  address: string; // as SalsaVida writes it, e.g. "Son Havana Carrera 73 #44-56 Medellín 050043 Colombia"
+  address: string; // as SalsaVida writes it, e.g. "Casa Ritmo Carrera 10 #20-30 Medellín 050010 Colombia" (invented)
   kind: 'class' | 'social';
   days: number[]; // weekdays it happens: 0 = Sunday ... 6 = Saturday, same as Date.getDay()
   time: string; // "18:30–19:30"
@@ -38,7 +39,7 @@ export type Offer = 'classes' | 'socials' | 'music';
 export interface Venue {
   id: string; // first Google place ID, or "sv-<eventId>" for a venue only SalsaVida knows
   name: string;
-  hosts: string[]; // who runs things here, e.g. ["Flavia's Dance School"]
+  hosts: string[]; // who runs things here, e.g. ["Ana's Dance School"] (invented)
   summary: string; // one AI-written sentence; empty when no AI answered
   category: string; // AI category ("salsa_school", "not_salsa"...); empty when no AI answered
   offers: Offer[]; // from the schedule, or the AI's guess
@@ -46,8 +47,31 @@ export interface Venue {
   lat?: number; // missing = SalsaVida-only venue: listed, but no pin
   lng?: number;
   googleMapsUri: string;
+  website: string; // the first Google place's website ('' if none)
   schedule: SalsaEvent[]; // copied from SalsaVida, never written by the AI
   evidence: { quote: string; source: string }[]; // short quotes the AI based its answer on
+  check?: EvidenceCheck; // the backend's check of its website / Instagram; missing = not checked yet
+}
+
+// The backend's answer to "does this venue really offer salsa?" (POST /evidence/website and /evidence/instagram).
+export interface EvidenceCheck {
+  verdict: 'evidence' | 'no_evidence' | 'needs_instagram' | 'not_checked'; // no_evidence = hide the venue
+  reason: string; // short human line, e.g. "salsa found on website"
+  facts: EvidenceFact[];
+  website?: { url: string; pagesRead: string[] };
+  instagram?: { url: string; bio?: string; lastPostDate?: string };
+}
+
+// One salsa fact found on the venue's own website or Instagram. The quote is word for word from sourceUrl.
+export interface EvidenceFact {
+  kind: 'class' | 'social' | 'live_music' | 'mention';
+  dance: string; // "salsa", "bachata"...
+  audience: 'adults' | 'kids' | 'unclear';
+  day?: string;
+  time?: string;
+  price?: string;
+  quote: string;
+  sourceUrl: string;
 }
 
 // A place's social media links (website from Google on click, the rest from POST /socials).
@@ -85,6 +109,18 @@ export function pinType(venue: Venue): PinType {
   if (hasSocial) return 'social';
   if (venue.offers.includes('music')) return 'music';
   return 'unknown';
+}
+
+// Offers shown by a venue's own website / Instagram: salsa facts that aren't for kids only.
+export function offersFromFacts(facts: EvidenceFact[]): Offer[] {
+  const offers: Offer[] = [];
+  for (const fact of facts) {
+    if (fact.dance !== 'salsa' || fact.audience === 'kids') continue;
+    if (fact.kind === 'class') offers.push('classes');
+    if (fact.kind === 'social') offers.push('socials');
+    if (fact.kind === 'live_music') offers.push('music');
+  }
+  return offers;
 }
 
 // Offers that come straight from a SalsaVida schedule.
