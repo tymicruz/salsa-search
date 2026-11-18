@@ -138,14 +138,24 @@ const STREET_TYPES: Record<string, string> = {
   jr: 'jiron', jiron: 'jiron', pje: 'pasaje', pasaje: 'pasaje',
 };
 
+// Unit words: the word after them is a shop or flat number, not part of the street address ("local 2", "apto 301").
+const UNIT_WORDS = new Set(['local', 'loc', 'apto', 'apartamento', 'oficina', 'of', 'interior', 'int', 'torre', 'bloque', 'consultorio']);
+
 // Reads the street part of an address: its type ("calle"), name words ("morazan") and numbers ("205").
 function readStreet(text: string) {
-  const words = addressWords(text);
+  const words: string[] = [];
+  const raw = addressWords(text);
+  for (let i = 0; i < raw.length; i++) {
+    if (UNIT_WORDS.has(raw[i])) i++; // skip "local 2"
+    else if (raw[i + 1] === 'piso' || raw[i] === 'piso') continue; // skip "2do piso" (a floor, not the street)
+    else words.push(raw[i].replace(/^(\d+)(ra|ro|da|do|er|ta|to|va|vo|na|no|mo|ma)$/, '$1')); // "5ta" -> "5"
+  }
   const typeAt = words.findIndex((w) => STREET_TYPES[w]);
   const after = typeAt === -1 ? words : words.slice(typeAt + 1);
   const firstNumber = after.findIndex((w) => /\d/.test(w));
   return {
     type: typeAt === -1 ? '' : STREET_TYPES[words[typeAt]],
+    allTypes: new Set(words.filter((w) => STREET_TYPES[w]).map((w) => STREET_TYPES[w])), // corners name 2 streets
     name: typeAt === -1 ? [] : after.slice(0, firstNumber === -1 ? after.length : firstNumber).filter((w) => w.length >= 3),
     numbers: after.filter((w) => /\d/.test(w) && w.length <= 4),
   };
@@ -166,7 +176,7 @@ export function sameStreet(salsavidaAddress: string, googleAddress: string): boo
   const g = readStreet(googleStreetPart(googleAddress));
   const s = readStreet(salsavidaAddress);
   if (g.numbers.length === 0 || !g.numbers.every((n) => s.numbers.includes(n))) return false;
-  if (g.type && s.type && g.type !== s.type) return false;
+  if (g.type && s.allTypes.size && !s.allTypes.has(g.type)) return false; // a corner ("Calle 74 Cra. 44") has 2 types
   if (g.name.length && s.name.length && !g.name.some((w) => s.name.includes(w))) return false;
   return true;
 }

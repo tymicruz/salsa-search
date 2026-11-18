@@ -249,6 +249,7 @@ function checkAnswer(
       byAddress++;
       continue;
     }
+    if (atAddress.length > 1) continue; // several places at its address, none with its name: leave it to the LLM
     const matches = [...placeRefs].filter(([, p]) => nameMatches(e, p));
     if (matches.length === 1) boundPlace.set(eRef, matches[0][0]);
   }
