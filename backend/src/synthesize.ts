@@ -4,6 +4,7 @@
 // so those can never be invented.
 import { askLLM } from './llm.ts';
 import {
+  acceptLookups,
   BUILDING_METERS,
   canJoin,
   differentBranch,
@@ -14,6 +15,7 @@ import {
   rareWords,
   sameAddress,
   sameName,
+  sameStreet,
   sharesWord,
   specificWords,
 } from './matching.ts';
@@ -30,6 +32,7 @@ export interface RawPlace {
   lng: number;
   googleMapsUri?: string;
   address?: string; // Google formattedAddress: compared by code only, never sent to the LLM
+  lookupFor?: number; // set when this place came from a Google lookup for that SalsaVida eventId
 }
 
 // A SalsaVida event as the frontend has it (one row per kind, so one event ID can appear twice).
@@ -44,6 +47,7 @@ export interface RawEvent {
   url: string;
   lastEdited: string;
   status: 'listed' | 'stale';
+  address?: string; // SalsaVida's address text: compared by code only, never sent to the LLM
 }
 
 export interface Venue {
@@ -67,7 +71,9 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // ---------- Main ----------
 
-export async function synthesize(places: RawPlace[], events: RawEvent[]) {
+export async function synthesize(allPlaces: RawPlace[], events: RawEvent[]) {
+  const places = acceptLookups(allPlaces, events); // drop Google lookup hits that don't match their SalsaVida venue
+
   // Short refs ("p1", "e1") instead of long IDs keep the prompt small and easy to check.
   const placeRefs = new Map(places.map((p, i) => [`p${i + 1}`, p]));
   const eventRefs = new Map(events.map((e, i) => [`e${i + 1}`, e]));
@@ -227,14 +233,26 @@ function checkAnswer(
   const venueOf = new Map<string, number>(); // ref -> index of the venue it ended up in (for the hints log)
   const dropped = { badRefs: 0, places: 0, events: 0, reattached: 0, quotes: [] as string[] }; // for the log
 
-  // An event whose venue name matches a Google place's name (same rule the frontend used before the AI)
-  // ALWAYS stays with that place, whatever the LLM says. So a pin never loses its own schedule.
-  // Only when it's unambiguous: exactly one place matches, and not two different qualifiers (see differentBranch).
+  // An event that clearly belongs to one Google place ALWAYS stays with it, whatever the LLM says,
+  // so a pin never loses its own schedule. Address first, then name:
+  // 1. SalsaVida's address is the same street address as exactly one place (if several, the one with the same name);
+  // 2. otherwise the venue name matches exactly one place, without two different qualifiers (see differentBranch).
   const boundPlace = new Map<string, string>(); // event ref -> place ref
+  const nameMatches = (e: RawEvent, p: RawPlace) => sameName(e.venue, p.name) && !differentBranch(e, p.name);
+  let byAddress = 0;
   for (const [eRef, e] of eventRefs) {
-    const matches = [...placeRefs].filter(([, p]) => sameName(e.venue, p.name) && !differentBranch(e, p.name));
+    const atAddress = [...placeRefs].filter(([, p]) => !!e.address && !!p.address && sameStreet(e.address, p.address));
+    const sameNamed = atAddress.filter(([, p]) => nameMatches(e, p));
+    const addressMatch = atAddress.length === 1 ? atAddress : sameNamed;
+    if (addressMatch.length === 1) {
+      boundPlace.set(eRef, addressMatch[0][0]);
+      byAddress++;
+      continue;
+    }
+    const matches = [...placeRefs].filter(([, p]) => nameMatches(e, p));
     if (matches.length === 1) boundPlace.set(eRef, matches[0][0]);
   }
+  console.log(`[synthesize] events bound to a place: ${byAddress} by address, ${boundPlace.size - byAddress} by name`);
 
   for (const v of answer.venues ?? []) {
     // Keep only real, not-yet-used refs.
@@ -363,7 +381,7 @@ function buildVenue(places: RawPlace[], events: RawEvent[], llm: Omit<Venue, 'id
 // ---------- Helpers ----------
 
 // One schedule line, copied from a SalsaVida row.
-function toScheduleItem({ id, venue, ...rest }: RawEvent) {
+function toScheduleItem({ id, venue, address, ...rest }: RawEvent) {
   return { eventId: id, ...rest };
 }
 

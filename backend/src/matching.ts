@@ -125,3 +125,72 @@ export function sharesWord(a: string, b: string): boolean {
   const wordsB = new Set(specificWords(b));
   return specificWords(a).some((w) => wordsB.has(w));
 }
+
+// ---------- SalsaVida address vs Google address ----------
+
+// Street-type words and their abbreviations, as written in Spanish addresses, mapped to one spelling.
+const STREET_TYPES: Record<string, string> = {
+  c: 'calle', cl: 'calle', cll: 'calle', calle: 'calle',
+  cra: 'carrera', kr: 'carrera', kra: 'carrera', cr: 'carrera', carrera: 'carrera',
+  av: 'avenida', avda: 'avenida', avenida: 'avenida',
+  dg: 'diagonal', diag: 'diagonal', diagonal: 'diagonal',
+  tv: 'transversal', transv: 'transversal', transversal: 'transversal',
+  jr: 'jiron', jiron: 'jiron', pje: 'pasaje', pasaje: 'pasaje',
+};
+
+// Reads the street part of an address: its type ("calle"), name words ("morazan") and numbers ("205").
+function readStreet(text: string) {
+  const words = addressWords(text);
+  const typeAt = words.findIndex((w) => STREET_TYPES[w]);
+  const after = typeAt === -1 ? words : words.slice(typeAt + 1);
+  const firstNumber = after.findIndex((w) => /\d/.test(w));
+  return {
+    type: typeAt === -1 ? '' : STREET_TYPES[words[typeAt]],
+    name: typeAt === -1 ? [] : after.slice(0, firstNumber === -1 ? after.length : firstNumber).filter((w) => w.length >= 3),
+    numbers: after.filter((w) => /\d/.test(w) && w.length <= 4),
+  };
+}
+
+// Google's street part: its comma-separated pieces up to the first one with a street number, at most 2
+// ("Cra. 73 #44-56, Laureles, …" -> "Cra. 73 #44-56"; "C. Gran Vía de Colón, 36, Centro, …" -> both first pieces).
+function googleStreetPart(address: string): string {
+  const pieces = address.split(',').slice(0, 2);
+  return hasStreetNumber(pieces[0]) ? pieces[0] : pieces.join(' ');
+}
+
+// Is a SalsaVida address ("Hostal Azul Calle Morazán 205 Granada Nicaragua") the same street address as a
+// Google one ("C. Morazán 205, Granada, Nicaragua")? All numbers of Google's street part must be in the
+// SalsaVida address, and the street type and name must agree when both have them.
+// So "Carrera 73 #44-56" = "Cra. 73 #44-56", but "Calle 10 #20-30" ≠ "Carrera 10 #20-30".
+export function sameStreet(salsavidaAddress: string, googleAddress: string): boolean {
+  const g = readStreet(googleStreetPart(googleAddress));
+  const s = readStreet(salsavidaAddress);
+  if (g.numbers.length === 0 || !g.numbers.every((n) => s.numbers.includes(n))) return false;
+  if (g.type && s.type && g.type !== s.type) return false;
+  if (g.name.length && s.name.length && !g.name.some((w) => s.name.includes(w))) return false;
+  return true;
+}
+
+// Google lookups the frontend ran for SalsaVida-only venues ("<venue> <address>"), tagged lookupFor = eventId.
+// Keep a hit only if it's at that event's street address, or has the event's venue name (no other-branch
+// qualifier). Others are dropped before anything else sees them: no pin, no hint, nothing sent to the LLM.
+// A hit that's already in the normal results is kept once.
+export function acceptLookups(places: RawPlace[], events: RawEvent[]): RawPlace[] {
+  const normalIds = new Set(places.filter((p) => p.lookupFor === undefined).map((p) => p.id));
+  const kept: RawPlace[] = [];
+  let sent = 0;
+  for (const p of places) {
+    if (p.lookupFor === undefined) {
+      kept.push(p);
+      continue;
+    }
+    sent++;
+    const e = events.find((ev) => ev.id === p.lookupFor);
+    const byAddress = !!e?.address && !!p.address && sameStreet(e.address, p.address);
+    const byName = !!e && sameName(e.venue, p.name) && !differentBranch(e, p.name);
+    const duplicate = normalIds.has(p.id) || kept.some((k) => k.id === p.id);
+    if ((byAddress || byName) && !duplicate) kept.push(p);
+  }
+  if (sent) console.log(`[synthesize] lookups: ${sent} sent, ${kept.length - normalIds.size} kept, ${sent - (kept.length - normalIds.size)} dropped`);
+  return kept;
+}

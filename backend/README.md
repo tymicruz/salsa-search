@@ -70,9 +70,12 @@ Turns one search's raw rows into a short list of venues a person can read. For e
 ```jsonc
 // request: what the frontend already has after a search
 { "area": "Puerto Escondido",
-  "places": [{ "id": "ChIJ...", "name": "PM", "types": ["dance_school"], "lat": 15.86, "lng": -97.07, "googleMapsUri": "...", "address": "..." }],
+  "places": [{ "id": "ChIJ...", "name": "PM", "types": ["dance_school"], "lat": 15.86, "lng": -97.07, "googleMapsUri": "...",
+               "address": "...",       // Google formattedAddress (code only)
+               "lookupFor": 123 }],    // only on Google lookups run for a SalsaVida-only venue
   "events": [{ "id": 123, "title": "Salsa social", "venue": "PM", "kind": "social", "days": [5], "time": "21:00–01:00",
-               "price": "100 MXN", "url": "https://www.salsavida.com/...", "lastEdited": "2026-10-02", "status": "listed" }] }
+               "price": "100 MXN", "url": "https://www.salsavida.com/...", "lastEdited": "2026-10-02", "status": "listed",
+               "address": "..." }] }   // SalsaVida's address text (code only)
 // response
 { "venues": [{
     "id": "ChIJ...",                 // first placeId, or "sv-<eventId>" if there's no Google place
@@ -101,8 +104,14 @@ How it stays honest:
     - are within 30 m, when the addresses can't be compared because one has no street number.
   - Places within 30 m but at different street numbers don't merge without a shared name word: dense areas have different schools a few doors apart. Anything else is split back out, whatever the LLM proposed. Generic words like "salsa", "academia" or "salsoteca" don't count as a shared word.
   - A SalsaVida event (no coordinates) may join a venue if its venue name or title matches the venue's name or shares a specific word with it. Generic words like "salsa", "bar" or "academia" don't count.
-  - A SalsaVida event whose venue name matches exactly one Google place always ends up with that place. "Matches" means every word of the shorter name is in the longer one, e.g. "Son Havana" = "Son Havana Bar", "Timbale" = "Organización Cultural y Social Timbalé". If the LLM split them, code moves the event back, so a pin keeps its own schedule.
-  - Exception, possible other branch: if the event has its own qualifier (a word in its venue, or in a "(...)" in its title) that the place lacks, AND the place has a different one, it isn't forced. For example, "Blood Dance Company … (Laureles)" vs "Blood Dance Company Guayabal". The LLM and the normal checks decide those.
+  - A SalsaVida event that clearly belongs to one Google place always ends up with it. If the LLM split them, code moves the event back, so a pin keeps its own schedule. "Clearly belongs" is decided address first, then by name:
+    1. **Same street address:** SalsaVida's address and the place's Google address. The numbers of Google's street part must all be in SalsaVida's address, and the street type and name must agree when both have them. Street abbreviations are normalized (C./Cl. = Calle, Cra./Kr. = Carrera, Av. = Avenida, Jr. = Jirón, …). So "Carrera 73 #44-56" = "Cra. 73 #44-56", but "Calle 10 #20-30" ≠ "Carrera 10 #20-30". The address wins even when the names differ. If several places are at that address, the one with the same name is used.
+    2. **Otherwise, same name:** every word of the shorter name is in the longer one, e.g. "Son Havana" = "Son Havana Bar", "Timbale" = "Organización Cultural y Social Timbalé". Exception, a possible other branch: if the event has its own qualifier (a word in its venue, or in a "(...)" in its title) that the place lacks, AND the place has a different one, it isn't forced. For example, "Blood Dance Company … (Laureles)" vs "Blood Dance Company Guayabal".
+  - Logged as `[synthesize] events bound to a place: X by address, Y by name`.
+- **Google lookups for SalsaVida-only venues:** the frontend may search Google for "<venue> <address>" and send the hits as places with `lookupFor: <eventId>`.
+  - A hit is kept only if it's at that event's street address (rule 1 above) or has the event's venue name (rule 2).
+  - Other hits are dropped before anything else sees them: no pin, no hint, nothing to the LLM. A hit that's already in the normal results is kept once.
+  - Logged as `[synthesize] lookups: N sent, K kept, D dropped`.
   - Evidence quotes are kept only if they appear word for word in the cited row.
   - Schedule, times, prices, links and pin locations are copied from the input rows, never written by the LLM.
 - **Same building, decided by code:** two venues whose places are at most 30 m apart AND at the same street address become one venue. For example, a school that teaches upstairs in a dance bar.
@@ -110,7 +119,7 @@ How it stays honest:
   - Both must have salsa evidence (an LLM category or offer, SalsaVida events, or Google type `dance_school`), so two shops in one mall don't merge.
   - The venue with SalsaVida events, or else the more specific name, keeps its name; the other becomes a host.
   - Each merge is logged: `[synthesize] building merge: "A" into "B" (12 m, same address)`.
-  - The address (`places[].address`, Google formattedAddress) is used only by this code and never sent to the LLM.
+  - Addresses (Google's `places[].address` and SalsaVida's `events[].address`) are used only by code and never sent to the LLM.
 
 **Speed (2026-11-17, claude-cli Haiku):** about 30s for 60 places + 6 events (Puerto Escondido) and about 56s for 60 places + 23 events (Medellín). The events were real SalsaVida data; the places were synthetic test rows. Each call logs `[synthesize] <area>: N places + M events -> K venues in Xs`.
 
