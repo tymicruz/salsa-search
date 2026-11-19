@@ -99,7 +99,7 @@ How it stays honest:
   - Each run logs `[synthesize] hints: near groups X offered, Y merged, name groups …`, as counts only.
 - **The LLM only decides** which rows belong together, plus name, hosts, category, offers, summary and evidence.
 - **Code checks every answer:**
-  - Each row ends up in exactly one venue or in `notSalsa`.
+  - Each row ends up in exactly one venue or in `notSalsa`. A place that a SalsaVida event is bound to is never `notSalsa`, since SalsaVida lists salsa there, even if the LLM says so.
   - IDs the LLM made up are dropped. Rows it forgot come back as their own `unknown` venue.
   - Two Google places may be in one venue only if they're within 150 m AND they either:
     - share a specific name word; or

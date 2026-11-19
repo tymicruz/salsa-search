@@ -338,8 +338,10 @@ function checkAnswer(
     );
   }
 
+  // A place a SalsaVida event is bound to is never "not salsa": SalsaVida lists salsa there.
+  const boundTargets = new Set(boundPlace.values());
   const notSalsa = (answer.notSalsa ?? [])
-    .filter((r: string) => placeRefs.has(r) && !used.has(r))
+    .filter((r: string) => placeRefs.has(r) && !used.has(r) && !boundTargets.has(r))
     .map((r: string) => {
       used.add(r);
       return placeRefs.get(r)!.id;
