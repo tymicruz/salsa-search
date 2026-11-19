@@ -3,7 +3,7 @@
 // (ordinals, "local 2", corners, the number after a comma, postal-code-only, ...). Run with `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sameStreet } from '../src/matching.ts';
+import { addressesDiffer, sameStreet } from '../src/matching.ts';
 
 // [SalsaVida-style address, Google-style address, same place?]
 const pairs: [string, string, boolean][] = [
@@ -34,5 +34,23 @@ const pairs: [string, string, boolean][] = [
 for (const [salsavida, google, expected] of pairs) {
   test(`${expected ? 'same' : 'different'}: ${salsavida.slice(0, 40)} | ${google.slice(0, 40)}`, () => {
     assert.equal(sameStreet(salsavida, google), expected);
+  });
+}
+
+// addressesDiffer(): do two addresses PROVE different places? (Then a name match may not join them.)
+// [SalsaVida-style, Google-style, differ?]
+const differPairs: [string, string, boolean][] = [
+  ['Escuela Once Carrera 70 #28-31 Barrio Oeste Ciudad', 'Cl. 19 #44-08, Barrio Sur, Ciudad, Región, País', true], // other branch
+  // same corner written from the other street (carrera 52 near calle 7 Sur = calle 7 Sur near carrera 52): not proof
+  ['Centro Uno Cra. 52 #7 Sur-140, tercer piso, Colegio Ejemplo Ciudad', 'Colegio Ejemplo, Cl. 7 Sur #52-3 a 52-48 Tercer Piso, Barrio, Ciudad', false],
+  ['Club Dos Calle 15 Sur #36‑02, Local 104, Barrio Ciudad', 'Cra. 36 #15 Sur-10, Barrio, Ciudad, Región, País', false],
+  ['Club Tres Calle 15 Sur #36-02 Ciudad', 'Cra. 37 #15 Sur-10, Ciudad, Región, País', true], // not the same corner (36 vs 37)
+  ['Bar Cuatro Calle 61 #40-15 Ciudad', 'Cl. 61 #40-15 local 3, Ciudad, Región, País', false], // same address
+  ['Casa Cinco Barrio Playa Pueblo', 'Cra. 15b #9-33, Barrio Playa, Pueblo', false], // no number on one side: no proof
+];
+
+for (const [salsavida, google, expected] of differPairs) {
+  test(`${expected ? 'differ' : 'no proof'}: ${salsavida.slice(0, 40)} | ${google.slice(0, 40)}`, () => {
+    assert.equal(addressesDiffer(salsavida, google), expected);
   });
 }

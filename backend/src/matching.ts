@@ -187,7 +187,19 @@ export function sameStreet(salsavidaAddress: string, googleAddress: string): boo
 // Do the addresses prove they're different places? Both have a street number and they don't match.
 // Address evidence beats a name match: "Escuela Ritmo" at Carrera 70 #28-31 isn't its other branch at Calle 19 #44-08.
 export function addressesDiffer(salsavidaAddress?: string, googleAddress?: string): boolean {
-  return hasStreetNumber(salsavidaAddress) && hasStreetNumber(googleAddress) && !sameStreet(salsavidaAddress!, googleAddress!);
+  if (!hasStreetNumber(salsavidaAddress) || !hasStreetNumber(googleAddress)) return false;
+  return !sameStreet(salsavidaAddress!, googleAddress!) && !sameCorner(salsavidaAddress!, googleAddress!);
+}
+
+// The same street corner written from the other street: "Cra. 47 #9 Sur-122" (carrera 47 near calle 9) and
+// "Cl. 9 Sur #47-2" (calle 9 near carrera 47). Different street types, first two numbers swapped.
+// Not proof of the SAME place (two buildings can share a corner), so it only stops an address from
+// contradicting a name match; it never binds or accepts on its own.
+function sameCorner(salsavidaAddress: string, googleAddress: string): boolean {
+  const g = readStreet(googleStreetPart(googleAddress));
+  const s = readStreet(salsavidaAddress);
+  return !!g.type && !!s.type && g.type !== s.type && g.numbers.length >= 2 && s.numbers.length >= 2 &&
+    g.numbers[0] === s.numbers[1] && g.numbers[1] === s.numbers[0];
 }
 
 // Google lookups the frontend ran for SalsaVida-only venues ("<venue> <address>"), tagged lookupFor = eventId.
