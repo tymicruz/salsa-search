@@ -26,6 +26,7 @@ Restart `npm run dev` after editing `.env`; it doesn't reload that file.
 | `CLAUDE_MODEL`, `CLAUDE_BIN` | only for `claude-cli`: model alias (default `haiku`) and path to `claude` (default `claude`) |
 | `CLAUDE_EFFORT` | optional, only for `claude-cli`: `low`, `medium` or `high`, how much the model thinks before answering. Unset = Claude Code's default. Being A/B-tested, not decided |
 | `CODEX_MODEL`, `CODEX_BIN` | only for `codex-cli`: model (empty = Codex's default) and path to `codex` (default `codex`) |
+| `CODEX_EFFORT` | optional, only for `codex-cli`: `low`, `medium`, `high`, `xhigh` or `max`, how much Codex thinks before answering. Unset = Codex's default. (`minimal` isn't accepted by Codex's default model.) |
 | `GEMINI_API_KEY` | only for `gemini`: from https://aistudio.google.com/apikey |
 | `GOOGLE_CLOUD_PROJECT` | only for `vertex`: your Cloud project ID |
 | `GOOGLE_CLOUD_LOCATION` | only for `vertex`: `global` (where Flash-Lite is offered). Other locations use the `{location}-aiplatform.googleapis.com` host, which is unverified |

@@ -162,6 +162,9 @@ const CODEX_TOOLS_OFF = ['shell_tool', 'unified_exec', 'browser_use', 'in_app_br
 async function askCodexCli(prompt: string): Promise<string> {
   const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--ephemeral', '--ignore-user-config', '--json'];
   for (const feature of CODEX_TOOLS_OFF) args.push('--disable', feature);
+  // Optional: how much Codex "thinks" before answering (low = faster). Unset = Codex's default.
+  const effort = process.env.CODEX_EFFORT;
+  if (effort && /^[a-z]+$/.test(effort)) args.push('-c', `model_reasoning_effort="${effort}"`);
   args.push('-'); // read the prompt from stdin
   if (process.env.CODEX_MODEL) args.unshift('-m', process.env.CODEX_MODEL); // empty = Codex's default model
   const stdout = await runCli('codex-cli', process.env.CODEX_BIN || 'codex', args, prompt);
@@ -176,10 +179,16 @@ async function askCodexCli(prompt: string): Promise<string> {
     if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
       answer = event.item.text; // keep the last message: that's the final answer
     }
+    if (event.type === 'turn.failed') {
+      throw new Error(`codex-cli failed: ${String(event.error?.message ?? '').slice(0, 200)}`);
+    }
     if (event.type === 'turn.completed') {
       const u = event.usage ?? {};
       // Codex adds its own ~15k-token system prompt to every call, which is why batching matters here.
-      console.log(`[codex-cli] ${process.env.CODEX_MODEL || 'default model'}: ${u.input_tokens} in, ${u.output_tokens} out (subscription, not billed)`);
+      console.log(
+        `[codex-cli] ${process.env.CODEX_MODEL || 'default model'}, effort ${effort || 'default'}: ${u.input_tokens} in, ` +
+          `${u.output_tokens} out (${u.reasoning_output_tokens ?? 0} reasoning) (subscription, not billed)`,
+      );
     }
   }
   return stripFences(answer);
