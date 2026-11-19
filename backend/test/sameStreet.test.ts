@@ -3,7 +3,8 @@
 // (ordinals, "local 2", corners, the number after a comma, postal-code-only, ...). Run with `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addressesDiffer, sameStreet } from '../src/matching.ts';
+import { acceptLookups, addressesDiffer, nameBindable, sameStreet } from '../src/matching.ts';
+import type { RawEvent, RawPlace } from '../src/synthesize.ts';
 
 // [SalsaVida-style address, Google-style address, same place?]
 const pairs: [string, string, boolean][] = [
@@ -53,7 +54,9 @@ const differPairs: [string, string, boolean][] = [
   // same corner written from the other street (carrera 52 near calle 7 Sur = calle 7 Sur near carrera 52): not proof
   ['Centro Uno Cra. 52 #7 Sur-140, tercer piso, Colegio Ejemplo Ciudad', 'Colegio Ejemplo, Cl. 7 Sur #52-3 a 52-48 Tercer Piso, Barrio, Ciudad', false],
   ['Club Dos Calle 15 Sur #36‑02, Local 104, Barrio Ciudad', 'Cra. 36 #15 Sur-10, Barrio, Ciudad, Región, País', false],
-  ['Club Tres Calle 15 Sur #36-02 Ciudad', 'Cra. 37 #15 Sur-10, Ciudad, Región, País', true], // not the same corner (36 vs 37)
+  ['Club Tres Calle 15 Sur #36-02 Ciudad', 'Cra. 37 #15 Sur-10, Ciudad, Región, País', false], // shares 15: no proof, the name decides
+  ['Escuela Ritmo Sede Norte Carrera 80 #36-44 Ciudad', 'Cra. 80 #45-12, Ciudad, Región, País', false], // same street, other plate: no proof
+  ['Escuela Ritmo Carrera 70 #28-31 Ciudad', 'Cl. 19 #44-08, Barrio Sur, Ciudad, Región, País', true], // no number shared: proof
   ['Bar Cuatro Calle 61 #40-15 Ciudad', 'Cl. 61 #40-15 local 3, Ciudad, Región, País', false], // same address
   ['Casa Cinco Barrio Playa Pueblo', 'Cra. 15b #9-33, Barrio Playa, Pueblo', false], // no number on one side: no proof
 ];
@@ -63,3 +66,44 @@ for (const [salsavida, google, expected] of differPairs) {
     assert.equal(addressesDiffer(salsavida, google), expected);
   });
 }
+
+// ---------- Name binding and lookup acceptance (invented venues) ----------
+
+const event = (id: number, venue: string, address: string, title = 'Salsa class'): RawEvent => ({
+  id, title, venue, address, kind: 'class', days: [2], time: '19:00', price: '', url: `u${id}`, lastEdited: '2026-10-01', status: 'listed',
+});
+const place = (id: string, name: string, address: string, lookupFor?: number): RawPlace => ({ id, name, address, lat: 1, lng: 1, lookupFor });
+
+test('same street, other plate, different branch qualifiers: no name binding', () => {
+  const e = event(1, 'Escuela Ritmo Sede Norte', 'Escuela Ritmo Sede Norte Carrera 80 #36-44 Ciudad');
+  assert.equal(nameBindable(e, place('A', 'Escuela Ritmo Sede Sur', 'Cra. 80 #45-12, Ciudad, País')), false);
+});
+test('same street, other plate, same name: the name decides (binds)', () => {
+  const e = event(1, 'Escuela Ritmo', 'Escuela Ritmo Carrera 80 #36-44 Ciudad');
+  assert.equal(nameBindable(e, place('A', 'Escuela Ritmo', 'Cra. 80 #45-12, Ciudad, País')), true);
+});
+test('no number shared: never by name', () => {
+  const e = event(1, 'Escuela Ritmo', 'Escuela Ritmo Carrera 70 #28-31 Ciudad');
+  assert.equal(nameBindable(e, place('A', 'Escuela Ritmo Sur', 'Cl. 19 #44-08, Ciudad, País')), false);
+});
+
+test('no-number fallback: one hit sharing a distinctive word is kept', () => {
+  const e = event(7, 'Danzflor Dance School', 'Danzflor Av. Ejemplo (exact number unverified) Ciudad');
+  const kept = acceptLookups([place('N1', 'Café Central', 'Cl. 1 #2-3, Ciudad'), place('H1', 'Danzflor Escuela de Danza', 'Av. Ejemplo 1015, Ciudad', 7)], [e]);
+  assert.deepEqual(kept.map((p) => p.id), ['N1', 'H1']);
+});
+test('no-number fallback: two qualifying hits -> neither is kept', () => {
+  const e = event(7, 'Danzflor Dance School', 'Danzflor Av. Ejemplo Ciudad');
+  const kept = acceptLookups([place('H1', 'Danzflor Norte', 'Av. Ejemplo 1015, Ciudad', 7), place('H2', 'Danzflor Studio', 'Cl. 9 #1-2, Ciudad', 7)], [e]);
+  assert.deepEqual(kept.map((p) => p.id), []);
+});
+test('no-number fallback: not used when SalsaVida has a street number', () => {
+  const e = event(7, 'Danzflor Dance School', 'Danzflor Carrera 12 #3-45 Ciudad');
+  const kept = acceptLookups([place('H1', 'Danzflor Escuela de Danza', 'Cl. 50 #60-70, Ciudad', 7)], [e]);
+  assert.deepEqual(kept.map((p) => p.id), []);
+});
+test('no-number fallback: a generic or short shared word is not enough', () => {
+  const e = event(7, 'Club Latino Bar', 'Club Latino Plaza Central Ciudad');
+  const kept = acceptLookups([place('H1', 'Latino Grill', 'Cl. 50 #60-70, Ciudad', 7)], [e]);
+  assert.deepEqual(kept.map((p) => p.id), []);
+});

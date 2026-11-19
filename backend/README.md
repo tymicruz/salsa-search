@@ -110,13 +110,18 @@ How it stays honest:
   - A SalsaVida event that clearly belongs to one Google place always ends up with it. If the LLM split them, code moves the event back, so a pin keeps its own schedule. "Clearly belongs" is decided address first, then by name:
     1. **Same street address:** SalsaVida's address and the place's Google address. The numbers of Google's street part must all be in SalsaVida's address, and the street type and name must agree when both have them. Street abbreviations are normalized (C./Cl. = Calle, Cra./Kr. = Carrera, Av. = Avenida, Jr. = Jirón, …). So "Carrera 12 #34-56" = "Cra. 12 #34-56", but "Calle 10 #20-30" ≠ "Carrera 10 #20-30". The address wins even when the names differ. If several places are at that address, the one with the same name is used.
     2. **Otherwise, same name:** every word of the shorter name is in the longer one, e.g. "Casa Ritmo" = "Casa Ritmo Bar", "Sabor" = "Centro Cultural Sabor". Exception, a possible other branch: if the event has its own qualifier (a word in its venue, or in a "(...)" in its title) that the place lacks, AND the place has a different one, it isn't forced. For example, "Escuela Ritmo … (Norte)" vs "Escuela Ritmo Sur".
-    3. **Address beats name:** if the event and a place both have a street number and the addresses don't match, they're never put together by name, neither by code nor by the LLM. "Escuela Ritmo" at Carrera 70 #28-31 stays off its other branch's pin at Calle 19 #44-08, and the event stays pinless. If several places share the event's address but none has its name, the event stays unbound.
+    3. **Address beats name:** if the addresses PROVE different places, they're never put together by name, neither by code nor by the LLM. Proof means both have a street number and none of the numbers in Google's street part appears in SalsaVida's address. "Escuela Ritmo" at Carrera 70 #28-31 stays off its other branch's pin at Calle 19 #44-08, and the event stays pinless. Anything less is "no proof" and the name decides: the same corner written from the other street ("Cra. 47 #9 Sur-122" vs "Cl. 9 Sur #47-2"), an odd format, or the same street with another plate number. Branches named "… Sede Norte" vs "… Sede Sur" still don't bind (rule 2's exception). If several places share the event's address but none has its name, the event stays unbound.
+    4. **Lookup hit:** a Google lookup hit accepted for this SalsaVida venue (below) gets its events.
     - **Address details:** ordinals ("Calle 8va" = "Cl. 8"), shop or floor parts ("local 2", "apto 301", "2do piso") and corners are handled. A corner like "Calle 52 Cra. 31 Esquina" = "Cra. 31 #52" is only allowed when neither side has a full plate number like "#44-56".
-  - Logged as `[synthesize] events bound to a place: X by address, Y by name`.
+  - Logged as `[synthesize] events bound to a place: X by address, Y by name, Z by lookup`.
 - **Google lookups for SalsaVida-only venues:** the frontend may search Google for "<venue> <address>" and send the hits as places with `lookupFor: <eventId>`.
   - A hit is kept only if it's at that event's street address (rule 1 above) or has the event's venue name (rule 2).
+  - **Fallback, when SalsaVida's address has no street number** (e.g. "Av. Ejemplo (exact number unverified)"): the hit is kept if all of these hold:
+    - its name shares a distinctive word with the venue name (not generic, 5+ letters, in at most 2 different names in the search);
+    - it's the only hit that qualifies for that event;
+    - it's inside the searched area (the frontend only sends those).
   - Other hits are dropped before anything else sees them: no pin, no hint, nothing to the LLM. A hit that's already in the normal results is kept once.
-  - Logged as `[synthesize] lookups: N sent, K kept, D dropped`.
+  - Logged as `[synthesize] lookups: N sent, K kept (A by address, B by name, C by distinctive name), D dropped`.
   - Evidence quotes are kept only if they appear word for word in the cited row.
   - Schedule, times, prices, links and pin locations are copied from the input rows, never written by the LLM.
 - **Same building, decided by code:** two venues whose places are at most 30 m apart AND at the same street address become one venue. For example, a school that teaches upstairs in a dance bar.

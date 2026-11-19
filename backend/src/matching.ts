@@ -186,42 +186,73 @@ export function sameStreet(salsavidaAddress: string, googleAddress: string): boo
 
 // Do the addresses prove they're different places? Both have a street number and they don't match.
 // Address evidence beats a name match: "Escuela Ritmo" at Carrera 70 #28-31 isn't its other branch at Calle 19 #44-08.
+// Proof means: NONE of the numbers in Google's street part appears in SalsaVida's address. Anything less is
+// "no proof" and the name decides, e.g. the same corner written from the other street ("Cra. 47 #9 Sur-122" vs
+// "Cl. 9 Sur #47-2"), an odd format with an extra number, or the same street with another plate number.
 export function addressesDiffer(salsavidaAddress?: string, googleAddress?: string): boolean {
   if (!hasStreetNumber(salsavidaAddress) || !hasStreetNumber(googleAddress)) return false;
-  return !sameStreet(salsavidaAddress!, googleAddress!) && !sameCorner(salsavidaAddress!, googleAddress!);
+  const g = readStreet(googleStreetPart(googleAddress!));
+  const s = readStreet(salsavidaAddress!);
+  return g.numbers.length > 0 && !g.numbers.some((n) => s.numbers.includes(n));
 }
 
-// The same street corner written from the other street: "Cra. 47 #9 Sur-122" (carrera 47 near calle 9) and
-// "Cl. 9 Sur #47-2" (calle 9 near carrera 47). Different street types, first two numbers swapped.
-// Not proof of the SAME place (two buildings can share a corner), so it only stops an address from
-// contradicting a name match; it never binds or accepts on its own.
-function sameCorner(salsavidaAddress: string, googleAddress: string): boolean {
-  const g = readStreet(googleStreetPart(googleAddress));
-  const s = readStreet(salsavidaAddress);
-  return !!g.type && !!s.type && g.type !== s.type && g.numbers.length >= 2 && s.numbers.length >= 2 &&
-    g.numbers[0] === s.numbers[1] && g.numbers[1] === s.numbers[0];
+// May an event be put on this place because of its NAME? Same name, not another branch, and the addresses
+// don't prove they're different places. Used for code binding and for accepting lookups.
+export function nameBindable(e: RawEvent, p: RawPlace): boolean {
+  return sameName(e.venue, p.name) && !differentBranch(e, p.name) && !addressesDiffer(e.address, p.address);
 }
 
 // Google lookups the frontend ran for SalsaVida-only venues ("<venue> <address>"), tagged lookupFor = eventId.
 // Keep a hit only if it's at that event's street address, or has the event's venue name (no other-branch
 // qualifier). Others are dropped before anything else sees them: no pin, no hint, nothing sent to the LLM.
 // A hit that's already in the normal results is kept once.
+//
+// Fallback when SalsaVida's address has NO street number ("Av. Ejemplo (exact number unverified)"): keep the hit
+// if its name shares a distinctive word with the venue name (not generic, 5+ letters, in at most 2 different names
+// in this search) and it's the only hit that qualifies for that event. The frontend only sends hits inside the area.
 export function acceptLookups(places: RawPlace[], events: RawEvent[]): RawPlace[] {
   const normalIds = new Set(places.filter((p) => p.lookupFor === undefined).map((p) => p.id));
-  const kept: RawPlace[] = [];
-  let sent = 0;
-  for (const p of places) {
-    if (p.lookupFor === undefined) {
-      kept.push(p);
-      continue;
-    }
-    sent++;
+  const hits = places.filter((p) => p.lookupFor !== undefined);
+  const allNames = [...places.map((p) => p.name), ...events.map((e) => e.venue)];
+  const kept = places.filter((p) => p.lookupFor === undefined);
+  const counts = { address: 0, name: 0, distinctive: 0 };
+
+  const distinctiveHits = new Map<number, RawPlace[]>(); // eventId -> hits that only qualify by a distinctive word
+  for (const p of hits) {
     const e = events.find((ev) => ev.id === p.lookupFor);
-    const byAddress = !!e?.address && !!p.address && sameStreet(e.address, p.address);
-    const byName = !!e && sameName(e.venue, p.name) && !differentBranch(e, p.name) && !addressesDiffer(e.address, p.address);
-    const duplicate = normalIds.has(p.id) || kept.some((k) => k.id === p.id);
-    if ((byAddress || byName) && !duplicate) kept.push(p);
+    if (!e || normalIds.has(p.id) || kept.some((k) => k.id === p.id)) continue; // unknown event or duplicate
+    if (e.address && p.address && sameStreet(e.address, p.address)) {
+      kept.push(p);
+      counts.address++;
+    } else if (nameBindable(e, p)) {
+      kept.push(p);
+      counts.name++;
+    } else if (!hasStreetNumber(e.address) && distinctiveWord(e.venue, p.name, allNames)) {
+      distinctiveHits.set(e.id, [...(distinctiveHits.get(e.id) ?? []), p]);
+    }
   }
-  if (sent) console.log(`[synthesize] lookups: ${sent} sent, ${kept.length - normalIds.size} kept, ${sent - (kept.length - normalIds.size)} dropped`);
+  for (const candidates of distinctiveHits.values()) {
+    if (candidates.length === 1) {
+      kept.push(candidates[0]);
+      counts.distinctive++;
+    }
+  }
+
+  const keptHits = counts.address + counts.name + counts.distinctive;
+  if (hits.length) {
+    console.log(
+      `[synthesize] lookups: ${hits.length} sent, ${keptHits} kept (${counts.address} by address, ${counts.name} by name, ` +
+        `${counts.distinctive} by distinctive name), ${hits.length - keptHits} dropped`,
+    );
+  }
   return kept;
+}
+
+// A word both names share that's distinctive: not generic, 5+ letters, and in at most 2 different names
+// in the whole search ("danzbloom" yes; "latino" or a word in many names no).
+function distinctiveWord(a: string, b: string, allNames: string[]): boolean {
+  const wordsB = specificWords(b);
+  return specificWords(a).some(
+    (w) => w.length >= 5 && wordsB.includes(w) && new Set(allNames.filter((n) => specificWords(n).includes(w)).map(norm)).size <= 2,
+  );
 }

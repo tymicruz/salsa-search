@@ -8,9 +8,9 @@ import {
   addressesDiffer,
   BUILDING_METERS,
   canJoin,
-  differentBranch,
   groupRows,
   meters,
+  nameBindable,
   NEAR_METERS,
   norm,
   rareWords,
@@ -239,12 +239,17 @@ function checkAnswer(
   // 1. SalsaVida's address is the same street address as exactly one place (if several, the one with the same name);
   // 2. otherwise the venue name matches exactly one place, without two different qualifiers (see differentBranch).
   const boundPlace = new Map<string, string>(); // event ref -> place ref
-  const nameMatches = (e: RawEvent, p: RawPlace) =>
-    sameName(e.venue, p.name) && !differentBranch(e, p.name) && !addressesDiffer(e.address, p.address);
   let byAddress = 0;
+  let byLookup = 0;
+  // Lookup hits: placeId -> the SalsaVida venue name it was looked up (and accepted) for.
+  const lookupVenue = new Map<string, string>();
+  for (const [, p] of placeRefs) {
+    const e = [...eventRefs.values()].find((ev) => ev.id === p.lookupFor);
+    if (e) lookupVenue.set(p.id, norm(e.venue));
+  }
   for (const [eRef, e] of eventRefs) {
     const atAddress = [...placeRefs].filter(([, p]) => !!e.address && !!p.address && sameStreet(e.address, p.address));
-    const sameNamed = atAddress.filter(([, p]) => nameMatches(e, p));
+    const sameNamed = atAddress.filter(([, p]) => nameBindable(e, p));
     const addressMatch = atAddress.length === 1 ? atAddress : sameNamed;
     if (addressMatch.length === 1) {
       boundPlace.set(eRef, addressMatch[0][0]);
@@ -252,10 +257,21 @@ function checkAnswer(
       continue;
     }
     if (atAddress.length > 1) continue; // several places at its address, none with its name: leave it to the LLM
-    const matches = [...placeRefs].filter(([, p]) => nameMatches(e, p));
-    if (matches.length === 1) boundPlace.set(eRef, matches[0][0]);
+    const matches = [...placeRefs].filter(([, p]) => nameBindable(e, p));
+    if (matches.length === 1) {
+      boundPlace.set(eRef, matches[0][0]);
+      continue;
+    }
+    // 3. a Google lookup hit that was accepted for this SalsaVida venue (e.g. by its distinctive name)
+    const lookedUp = [...placeRefs].filter(([, p]) => lookupVenue.get(p.id) === norm(e.venue));
+    if (lookedUp.length === 1) {
+      boundPlace.set(eRef, lookedUp[0][0]);
+      byLookup++;
+    }
   }
-  console.log(`[synthesize] events bound to a place: ${byAddress} by address, ${boundPlace.size - byAddress} by name`);
+  console.log(
+    `[synthesize] events bound to a place: ${byAddress} by address, ${boundPlace.size - byAddress - byLookup} by name, ${byLookup} by lookup`,
+  );
 
   for (const v of answer.venues ?? []) {
     // Keep only real, not-yet-used refs.
