@@ -133,6 +133,7 @@ export class App {
       const events = city
         ? await fetchSalsaVidaEvents(city, country).catch((error) => {
             console.error(error);
+            this.message.set("Schedules from SalsaVida couldn't load. Press Search this area to retry.");
             return [];
           })
         : [];
@@ -148,7 +149,8 @@ export class App {
       this.message.set('Search failed. Check the browser console.');
     }
     this.loading.set(false);
-    this.areaChanged.set(false);
+    // Hide "Search this area" until the map moves, unless a message asks to press it to retry.
+    this.areaChanged.set(this.message() !== '');
   }
 
   // Asks the backend's AI to merge the raw rows into readable venues (hosts, summaries, types), then shows them.
