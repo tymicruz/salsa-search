@@ -148,7 +148,10 @@ function readStreet(text: string) {
   for (let i = 0; i < raw.length; i++) {
     if (UNIT_WORDS.has(raw[i])) i++; // skip "local 2"
     else if (raw[i + 1] === 'piso' || raw[i] === 'piso') continue; // skip "2do piso" (a floor, not the street)
-    else words.push(raw[i].replace(/^(\d+)(ra|ro|da|do|er|ta|to|va|vo|na|no|mo|ma)$/, '$1')); // "5ta" -> "5"
+    else {
+      const w = raw[i].replace(/^(\d+)(ra|ro|da|do|er|ta|to|va|vo|na|no|mo|ma|st|nd|rd|th)$/, '$1'); // "5ta" -> "5"
+      words.push(...(/\d/.test(w) ? w.match(/\d+[a-z]?/g)! : [w])); // a joined plate "21b18" -> "21b", "18"
+    }
   }
   const typeAt = words.findIndex((w) => STREET_TYPES[w]);
   const after = typeAt === -1 ? words : words.slice(typeAt + 1);
@@ -176,6 +179,8 @@ export function sameStreet(salsavidaAddress: string, googleAddress: string): boo
   const g = readStreet(googleStreetPart(googleAddress));
   const s = readStreet(salsavidaAddress);
   if (g.numbers.length === 0 || !g.numbers.every((n) => s.numbers.includes(n))) return false;
+  // "Cra. 47" alone is a whole street, not a building: a type and its own number, with no house number.
+  if (g.type && g.name.length === 0 && g.numbers.length < 2) return false;
   // A corner ("Calle 52 Cra. 31 Esquina" = "Cra. 31 #52") names 2 street types and 2 numbers. Only for addresses
   // without a full plate number (3+ numbers like "Cra. 12 #34-56"), so normal addresses aren't loosened.
   const corner = g.numbers.length <= 2 && s.numbers.length <= 2;

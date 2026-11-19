@@ -151,6 +151,15 @@ ${JSON.stringify(input)}`;
   const checked = checkAnswer(answer, placeRefs, eventRefs, near);
   const venues = mergeBuildings(checked.venues, places, checked.venueOf);
 
+  // A venue whose name shares no word with its SalsaVida venue name (e.g. it's named after the building the
+  // school is in) takes the SalsaVida name: the dance place is what people look for.
+  for (const v of venues) {
+    const salsavidaNames = [...new Set(v.schedule.map((s) => events.find((e) => e.id === s.eventId)!.venue))];
+    if (salsavidaNames.length && !salsavidaNames.some((n) => sameName(n, v.name) || sharesWord(n, v.name))) {
+      v.name = salsavidaNames[0];
+    }
+  }
+
   // Diagnosis log (counts only): how many hint groups code offered, and how many ended up as one venue.
   const { venueOf } = checked;
   console.log(`[synthesize] hints: near groups ${countMerged(near, venueOf)}, name groups ${countMerged(nameGroup, venueOf)}`);

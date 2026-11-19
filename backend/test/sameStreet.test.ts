@@ -28,6 +28,8 @@ const pairs: [string, string, boolean][] = [
   ['Salón Once Arcada de Flores 207, 3rd Floor Pueblo', 'Arcada de Flores 207, Pueblo 12001, País', true],
   ['Bar Doce Callejón Alto 365 Pueblo', 'Calle Callejón Alto 365, Pueblo 12000', true],
   ['Hostal Trece Posada de la Luna 214 Pueblo', 'Posada de la Luna 241, Pueblo 12001, País', false], // 214 vs 241
+  ['Centro Catorce Cra. 52 #7 Sur-140, tercer piso Ciudad', 'Cra. 52, Barrio, Ciudad, Región, País', false], // a bare street, no building
+  ['Bar Quince Av. 9 Nte. #12-30 Ciudad', 'Av. 9 Nte., Barrio, Ciudad, País', false], // a bare street, no building
   // Must NOT match
   ['Spa Ocho Calle 20 Carrera 95 esquina Ciudad', 'Cra. 41a #6B-17, Ciudad, Región, País', false], // different numbers
   ['Club Nueve Parque Central Ciudad', 'Cra. 15b #9-33, Parque Central, Ciudad, Región', false], // no number on SalsaVida's side
