@@ -154,7 +154,11 @@ ${JSON.stringify(input)}`;
   // Diagnosis log (counts only): how many hint groups code offered, and how many ended up as one venue.
   const { venueOf } = checked;
   console.log(`[synthesize] hints: near groups ${countMerged(near, venueOf)}, name groups ${countMerged(nameGroup, venueOf)}`);
-  return { venues, notSalsa: checked.notSalsa };
+  // The places the LLM called "not salsa", also as venues: the frontend checks their websites (the LLM can be
+  // wrong, e.g. a hostel with a weekly salsa class) and shows one only if the evidence step finds salsa.
+  const unknown = { name: '', hosts: [], category: 'unknown', offers: [], summary: '', evidence: [] };
+  const notSalsaVenues = places.filter((p) => checked.notSalsa.includes(p.id)).map((p) => buildVenue([p], [], unknown));
+  return { venues, notSalsa: checked.notSalsa, notSalsaVenues };
 }
 
 // ---------- Same building (decided by code, not the LLM) ----------

@@ -91,7 +91,9 @@ Turns one search's raw rows into a short list of venues a person can read. For e
     "schedule": [{ "eventId": 123, "title": "...", "kind": "social", "days": [5], "time": "...", "price": "...",
                    "url": "...", "lastEdited": "...", "status": "listed" }],
     "evidence": [{ "quote": "Salsa social", "source": "https://www.salsavida.com/..." }] }],
-  "notSalsa": ["ChIJ..."] }          // placeIds to hide
+  "notSalsa": ["ChIJ..."],           // placeIds the LLM called not salsa
+  "notSalsaVenues": [{ "id": "ChIJ...", "name": "...", "lat": 0, "lng": 0, "googleMapsUri": "...", "category": "unknown", … }] }
+  // the same places in the Venue shape: the frontend checks their websites with /evidence/website and shows one only on "evidence"
 ```
 How it stays honest:
 - **The LLM sees** names, Google types, SalsaVida text and two hints computed by code. It never sees coordinates or addresses.
