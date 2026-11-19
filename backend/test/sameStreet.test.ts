@@ -18,6 +18,15 @@ const pairs: [string, string, boolean][] = [
   ['Salón Cinco Calle 52 Cra. 31 Esquina Ciudad', 'Cra. 31 #52, Centro, Ciudad, Región', true], // corner
   ['Hostal Seis Calle Ejemplo 118 Pueblo País', 'C. Ejemplo 118, Pueblo, País', true], // Calle = C.
   ['Escuela Siete C. Gran Paseo, 24 10101 Pueblo País', 'C. Gran Paseo, 24, Centro, 10101 Pueblo, País', true], // number after a comma
+  // Streets without a type word (common in old town centers), "de la" in the name, floors in English or Spanish
+  ['Hostal Ocho Posada de la Luna 214 Pueblo', 'Posada de la Luna 214, Pueblo 12001, País', true],
+  ['Hostal Ocho Posada de la Luna 214 Pueblo', 'C. Posada de la Luna 214, Pueblo 12000, País', true],
+  ['Hostal Ocho Posada de la Luna 214 Pueblo', 'Hostal Ocho Pueblo, Posada de la Luna 214, Pueblo 12001', true], // name first
+  ['Bar Nueve Bajada de San Pedro 530 Pueblo', 'Bajada Sn. Pedro 530, Pueblo 12001, País', true],
+  ['Club Diez Calle Arcos 418, 2do Piso Pueblo', 'C. Arcos 418, Pueblo 12001, País', true],
+  ['Salón Once Arcada de Flores 207, 3rd Floor Pueblo', 'Arcada de Flores 207, Pueblo 12001, País', true],
+  ['Bar Doce Callejón Alto 365 Pueblo', 'Calle Callejón Alto 365, Pueblo 12000', true],
+  ['Hostal Trece Posada de la Luna 214 Pueblo', 'Posada de la Luna 241, Pueblo 12001, País', false], // 214 vs 241
   // Must NOT match
   ['Spa Ocho Calle 20 Carrera 95 esquina Ciudad', 'Cra. 41a #6B-17, Ciudad, Región, País', false], // different numbers
   ['Club Nueve Parque Central Ciudad', 'Cra. 15b #9-33, Parque Central, Ciudad, Región', false], // no number on SalsaVida's side
