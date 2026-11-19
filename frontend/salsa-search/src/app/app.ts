@@ -123,15 +123,19 @@ export class App {
 
   // Loads real salsa places for an area: Google places first, then SalsaVida schedules for the city they're in.
   // Runs only on a user action: a city search, the dice, or "Search this area".
-  protected async searchArea(area = this.map().getBounds()!) {
+  // searchedName: the name the user picked ("Cusco"); SalsaVida tries it first. Empty for "Search this area".
+  protected async searchArea(area = this.map().getBounds()!, searchedName = '') {
     this.loading.set(true);
     this.message.set('');
     this.selectedId.set(null);
     try {
-      const { places, city, country } = await searchPlaces(area);
+      const { places, cityNames, country } = await searchPlaces(area);
+      // Names to try with SalsaVida, without repeats: the searched name, then those from the found places.
+      const names = [...new Set([searchedName, ...cityNames].filter((n) => n))];
+      const city = names[0] ?? '';
       // If SalsaVida fails (or no city was found), still show the Google places, with unknown schedules.
       const events = city
-        ? await fetchSalsaVidaEvents(city, country).catch((error) => {
+        ? await fetchSalsaVidaEvents(names, country).catch((error) => {
             console.error(error);
             this.message.set("Schedules from SalsaVida couldn't load. Press Search this area to retry.");
             return [];
@@ -315,7 +319,8 @@ export class App {
       const place = prediction.toPlace();
       await place.fetchFields({ fields: ['viewport'] });
       this.map().fitBounds(place.viewport!); // zoom so the whole city / lake / region is in view
-      this.searchArea(place.viewport!); // find salsa places in the whole city
+      // Find salsa places in the whole city. mainText is the name without region/country ("Cusco").
+      this.searchArea(place.viewport!, prediction.mainText?.text ?? '');
     } catch (error) {
       console.error(error);
       this.message.set("Couldn't find that place.");

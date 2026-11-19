@@ -26,10 +26,12 @@ const SEARCH_FIELDS = [...PLACE_FIELDS, 'websiteURI'];
 const QUERIES = ['salsa classes', 'salsa dance school'];
 
 // Salsa places inside the given area. The queries run at the same time; duplicates are dropped.
-// Also returns the area's city and country: where most of the found places are (empty if none found).
+// Also returns the area's country and candidate city names for SalsaVida, from where most of the found places
+// are: the most common locality ("Cusco"), then county and state level (a locality can be a district
+// SalsaVida doesn't know). Empty if no places were found.
 export async function searchPlaces(
   area: google.maps.LatLngBounds,
-): Promise<{ places: Place[]; city: string; country: string }> {
+): Promise<{ places: Place[]; cityNames: string[]; country: string }> {
   const results = await Promise.all(
     QUERIES.map((textQuery) =>
       google.maps.places.Place.searchByText({ textQuery, fields: SEARCH_FIELDS, locationRestriction: area, maxResultCount: 20 }),
@@ -37,31 +39,45 @@ export async function searchPlaces(
   );
 
   const found = new Map<string, Place>(); // keyed by place ID, so a place found by 2 queries is kept once
-  const cityCounts = new Map<string, number>(); // "city|country code" -> how many places are in it
+  // name -> how many places have it, for each level of the address
+  const localities = new Map<string, number>();
+  const counties = new Map<string, number>();
+  const states = new Map<string, number>();
+  const countryCodes = new Map<string, number>();
   for (const { places } of results) {
     for (const place of places) {
       if (found.has(place.id)) continue;
 
-      const city = place.addressComponents?.find((c) => c.types.includes('locality'))?.longText;
-      const countryCode = place.addressComponents?.find((c) => c.types.includes('country'))?.shortText; // "NI"
-      if (city && countryCode) {
-        const key = `${city}|${countryCode}`;
-        cityCounts.set(key, (cityCounts.get(key) ?? 0) + 1);
-      }
+      const part = (type: string) => place.addressComponents?.find((c) => c.types.includes(type));
+      count(localities, part('locality')?.longText);
+      count(counties, part('administrative_area_level_2')?.longText);
+      count(states, part('administrative_area_level_1')?.longText);
+      count(countryCodes, part('country')?.shortText); // "NI"
 
       found.set(place.id, toPlace(place));
     }
   }
 
-  let best = '';
-  for (const [key, count] of cityCounts) {
-    if (count > (cityCounts.get(best) ?? 0)) best = key;
-  }
-  const [city = '', countryCode = ''] = best.split('|');
+  const cityNames = [mostCommon(localities), mostCommon(counties), mostCommon(states)].filter((n) => n);
+  const countryCode = mostCommon(countryCodes);
   // The country code ("NI") doesn't depend on the browser's language; Intl.DisplayNames (built into browsers)
   // turns it into the English name SalsaVida uses ("Nicaragua").
   const country = countryCode ? (new Intl.DisplayNames(['en'], { type: 'region' }).of(countryCode) ?? '') : '';
-  return { places: [...found.values()], city, country };
+  return { places: [...found.values()], cityNames, country };
+}
+
+// Adds one to a name's count (skips empty names).
+function count(counts: Map<string, number>, name: string | null | undefined) {
+  if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+}
+
+// The name with the highest count, or '' if there are none.
+function mostCommon(counts: Map<string, number>) {
+  let best = '';
+  for (const [name, n] of counts) {
+    if (n > (counts.get(best) ?? 0)) best = name;
+  }
+  return best;
 }
 
 // Every SalsaVida venue gets one Text Search by SalsaVida's address (it starts with the venue name):
@@ -126,11 +142,19 @@ interface SalsaVidaOccurrence {
 
 // This week's salsa classes and socials in a city. A weekly event appears once per date, so they're
 // grouped by event ID into one SalsaEvent with its weekdays.
-export async function fetchSalsaVidaEvents(city: string, country: string): Promise<SalsaEvent[]> {
+export async function fetchSalsaVidaEvents(cityNames: string[], country: string): Promise<SalsaEvent[]> {
   // Same-named cities are common (Granada in Spain and in Nicaragua), so first find SalsaVida's ID
-  // for this city in this country.
-  const location = await findSalsaVidaLocation(city, country);
+  // for this city in this country. Try each candidate name in order; use the first SalsaVida knows.
+  let location: number | undefined;
+  for (const name of cityNames) {
+    location = await findSalsaVidaLocation(name, country);
+    if (location) {
+      console.info(`SalsaVida location: "${name}, ${country}" (candidates: ${cityNames.join(' / ')})`);
+      break;
+    }
+  }
   if (!location) {
+    console.info(`SalsaVida knows none of: ${cityNames.join(' / ')} (${country})`);
     return []; // SalsaVida doesn't list this city: show no schedules rather than another country's
   }
 
