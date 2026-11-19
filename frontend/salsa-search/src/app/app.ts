@@ -54,8 +54,11 @@ export class App {
   protected links = signal<Record<string, SocialLinks | 'loading' | 'error'>>({});
   protected checking = signal<string[]>([]); // IDs of venues whose website / Instagram is being checked now
 
-  // Venues whose own website / Instagram showed no salsa (or only kids' salsa) are hidden everywhere.
-  private shownVenues = computed(() => this.venues().filter((v) => v.check?.verdict !== 'no_evidence'));
+  // Hidden everywhere: venues whose own website / Instagram showed no salsa (or only kids' salsa),
+  // and venues the AI doubted ("not salsa") unless their website / Instagram proved salsa.
+  private shownVenues = computed(() =>
+    this.venues().filter((v) => v.check?.verdict !== 'no_evidence' && (!v.doubted || v.check?.verdict === 'evidence')),
+  );
 
   protected selectedId = signal<string | null>(null); // the clicked pin / list row
   private bounds = signal<google.maps.LatLngBounds | null>(null); // the area the map shows
@@ -176,10 +179,16 @@ export class App {
       // Only if no newer search replaced the list while the AI was thinking.
       if (this.venues() === venues) {
         this.venues.set(improved);
-        // Then check, in the background, the venues with no SalsaVida schedule (at most 15, ones with a website first).
-        const unscheduled = improved.filter((v) => !v.schedule.length);
-        const websitesFirst = [...unscheduled.filter((v) => v.website), ...unscheduled.filter((v) => !v.website)];
-        this.checkEvidence(websitesFirst.slice(0, 15)); // not awaited
+        // Then check, in the background, at most 15 venues: those with no SalsaVida schedule (websites first),
+        // then the AI-doubted ones that have a website (a second chance before they stay hidden).
+        const unscheduled = improved.filter((v) => !v.schedule.length && !v.doubted);
+        const doubtedWithWebsite = improved.filter((v) => v.doubted && v.website);
+        const batch = [
+          ...unscheduled.filter((v) => v.website),
+          ...unscheduled.filter((v) => !v.website),
+          ...doubtedWithWebsite,
+        ];
+        this.checkEvidence(batch.slice(0, 15)); // not awaited
       }
     } catch (error) {
       console.error(error);

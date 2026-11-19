@@ -51,6 +51,7 @@ export interface Venue {
   schedule: SalsaEvent[]; // copied from SalsaVida, never written by the AI
   evidence: { quote: string; source: string }[]; // short quotes the AI based its answer on
   check?: EvidenceCheck; // the backend's check of its website / Instagram; missing = not checked yet
+  doubted?: boolean; // the AI said "not salsa": shown only if its own website / Instagram proves salsa
 }
 
 // The backend's answer to "does this venue really offer salsa?" (POST /evidence/website and /evidence/instagram).

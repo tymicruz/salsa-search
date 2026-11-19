@@ -6,25 +6,28 @@ const BACKEND_URL = 'http://localhost:3000';
 // POST /synthesize: the backend's AI merges one search's raw rows into readable venues
 // (e.g. 3 Google pins for one studio + "Ana's Dance School at <that studio>" on SalsaVida -> one venue; invented).
 // Schedules, links and pin locations are copied by the backend's code, never written by the AI.
-// Places it judges "not salsa" are simply left out of the answer. Takes ~30–60 s.
+// Places it judges "not salsa" come back separately (notSalsaVenues); we keep them marked `doubted`,
+// so they stay hidden unless their own website or Instagram proves salsa. Takes ~30–60 s.
 export async function synthesizeVenues(area: string, places: Place[], events: SalsaEvent[]): Promise<Venue[]> {
   const body = {
     area,
     places,
     events: events.map(({ eventId, ...rest }) => ({ id: eventId, ...rest })), // the backend calls it "id"
   };
-  const { venues } = await post('/synthesize', body);
+  const { venues, notSalsaVenues = [] } = await post('/synthesize', body);
 
   // The backend's schedule items have no "venue" field; ours do, so fill it with the venue's name.
   // The website comes from the venue's first Google place (the backend doesn't return it).
-  return venues.map((v: Venue) => ({
+  const toVenue = (v: Venue, doubted: boolean): Venue => ({
     ...v,
     hosts: v.hosts ?? [],
     googleMapsUri: v.googleMapsUri ?? '',
     website: places.find((p) => p.id === v.placeIds[0])?.website ?? '',
     evidence: v.evidence ?? [],
     schedule: v.schedule.map((item) => ({ ...item, venue: v.name })),
-  }));
+    doubted,
+  });
+  return [...venues.map((v: Venue) => toVenue(v, false)), ...notSalsaVenues.map((v: Venue) => toVenue(v, true))];
 }
 
 // POST /evidence/website: the backend reads each venue's own website (or its SalsaVida page, to find one)
