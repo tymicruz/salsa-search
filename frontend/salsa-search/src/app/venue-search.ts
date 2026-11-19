@@ -184,11 +184,17 @@ interface SalsaVidaLocation {
 // Calls one SalsaVida tool ('search_events' or 'search_locations').
 // SalsaVida allows browser calls from any site (CORS), so no proxy or backend is needed.
 async function callSalsaVida(tool: string, args: object) {
-  const response = await fetch('https://mcp.salsavida.com/mcp', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }),
-  });
+  let response: Response;
+  try {
+    response = await postToSalsaVida(tool, args);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  } catch {
+    // SalsaVida sometimes fails for a moment ("Failed to fetch"). Retry ONCE after 1.5 s, never more:
+    // they allow about 120 calls a minute.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    response = await postToSalsaVida(tool, args);
+    if (!response.ok) throw new Error(`SalsaVida: HTTP ${response.status}`);
+  }
   // The answer is a server-sent event: a line "data: {json}".
   const text = await response.text();
   const data = JSON.parse(text.slice(text.indexOf('data: ') + 6));
@@ -196,6 +202,14 @@ async function callSalsaVida(tool: string, args: object) {
     throw new Error('SalsaVida: ' + JSON.stringify(data.error ?? data.result.content));
   }
   return data.result.structuredContent;
+}
+
+function postToSalsaVida(tool: string, args: object) {
+  return fetch('https://mcp.salsavida.com/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }),
+  });
 }
 
 // One SalsaVida event can be a class and a social at once; we keep one entry per kind. Festivals are skipped.
