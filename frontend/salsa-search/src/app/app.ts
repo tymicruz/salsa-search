@@ -179,16 +179,13 @@ export class App {
       // Only if no newer search replaced the list while the AI was thinking.
       if (this.venues() === venues) {
         this.venues.set(improved);
-        // Then check, in the background, at most 15 venues: those with no SalsaVida schedule (websites first),
-        // then the AI-doubted ones that have a website (a second chance before they stay hidden).
+        // Then check, in the background, at most 15 venues: up to 3 slots for AI-doubted venues that have a
+        // website (a second chance before they stay hidden), the rest for venues with no SalsaVida schedule
+        // (websites first).
+        const doubted = improved.filter((v) => v.doubted && v.website).slice(0, 3);
         const unscheduled = improved.filter((v) => !v.schedule.length && !v.doubted);
-        const doubtedWithWebsite = improved.filter((v) => v.doubted && v.website);
-        const batch = [
-          ...unscheduled.filter((v) => v.website),
-          ...unscheduled.filter((v) => !v.website),
-          ...doubtedWithWebsite,
-        ];
-        this.checkEvidence(batch.slice(0, 15)); // not awaited
+        const regular = [...unscheduled.filter((v) => v.website), ...unscheduled.filter((v) => !v.website)];
+        this.checkEvidence([...regular.slice(0, 15 - doubted.length), ...doubted]); // not awaited
       }
     } catch (error) {
       console.error(error);
