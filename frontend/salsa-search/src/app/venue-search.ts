@@ -108,6 +108,36 @@ export async function lookUpSalsaVidaVenues(venues: Venue[], places: Place[], ar
   return hits.flat();
 }
 
+// SalsaVida venues still without a pin (Google has no place for them): pin them at their street address,
+// but only if Google finds that exact address (a building, not just a street or a nearby business).
+// One Text Search per pinless venue.
+export async function pinAtAddress(venues: Venue[], events: SalsaEvent[], area: google.maps.LatLngBounds) {
+  return Promise.all(
+    venues.map(async (venue) => {
+      // The merged schedule has no addresses: take it from the original SalsaVida event.
+      const event = events.find((e) => e.eventId === venue.schedule[0]?.eventId);
+      if (venue.lat !== undefined || !event?.address) return venue;
+      const street = event.address.replace(event.venue, '').trim(); // the address starts with the venue name
+      if (!street) return venue;
+      try {
+        const { places } = await google.maps.places.Place.searchByText({
+          textQuery: street,
+          fields: ['location', 'types'],
+          locationBias: area,
+          maxResultCount: 1,
+        });
+        const spot = places.find(
+          (p) => ['street_address', 'premise', 'subpremise'].some((t) => p.types?.includes(t)) && area.contains(p.location!),
+        );
+        return spot ? { ...venue, lat: spot.location!.lat(), lng: spot.location!.lng() } : venue;
+      } catch (error) {
+        console.error(error);
+        return venue; // a missing pin never costs the whole AI merge
+      }
+    }),
+  );
+}
+
 // A Google Place result -> our Place shape.
 function toPlace(place: google.maps.places.Place): Place {
   return {

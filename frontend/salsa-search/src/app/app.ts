@@ -17,7 +17,7 @@ import {
   SocialLinks,
   Venue,
 } from './venue';
-import { fetchSalsaVidaEvents, lookUpSalsaVidaVenues, rawToVenues, searchPlaces } from './venue-search';
+import { fetchSalsaVidaEvents, lookUpSalsaVidaVenues, pinAtAddress, rawToVenues, searchPlaces } from './venue-search';
 
 @Component({
   imports: [GoogleMap, MapAdvancedMarker, DiceButton, MapLegend, VenueList, WeekStrip],
@@ -175,7 +175,7 @@ export class App {
     try {
       const hits = await lookUpSalsaVidaVenues(venues, places, area);
       console.info(`SalsaVida lookups: ${hits.length} new Google places sent for checking`);
-      const improved = await synthesizeVenues(city, [...places, ...hits], events);
+      const improved = await pinAtAddress(await synthesizeVenues(city, [...places, ...hits], events), events, area);
       // Only if no newer search replaced the list while the AI was thinking.
       if (this.venues() === venues) {
         this.venues.set(improved);
