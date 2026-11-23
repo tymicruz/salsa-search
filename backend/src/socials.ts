@@ -18,25 +18,27 @@ export async function findSocials(url: string): Promise<Socials> {
   return socialLinks(page.html!);
 }
 
-// Every Instagram / Facebook / Linktree profile link in a page's HTML.
+// Every Instagram / Facebook / Linktree profile the page links to. Only real links (href="...") count:
+// URLs that just appear in scripts or markup (like Facebook's "facebook.com/2008/fbml" namespace) aren't links.
 export function socialLinks(html: string): Socials {
   const socials: Socials = { instagram: [], facebook: [], linktree: [] };
-  const links = html.match(/https?:\/\/(?:[a-z]+\.)?(?:instagram\.com|facebook\.com|fb\.com|linktr\.ee)\/[^\s"'<>?#\\]+/gi) ?? [];
-  for (const link of links) {
-    const site = socialSite(link);
+  for (const [, href] of html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)) {
+    const url = URL.parse(href.replaceAll('&amp;', '&'), 'https://x/'); // the base resolves "//instagram.com/x"
+    const site = url && socialSite(url.href);
+    if (!site || !isProfile(url.pathname)) continue;
     // One spelling per link, so "instagram.com/X/" and "https://www.instagram.com/x" count once
-    // (these sites ignore upper/lower case in profile names).
-    const clean = link.toLowerCase().replace(/^https?:\/\/(?:www\.|m\.|web\.)?/, 'https://www.').replace(/\/+$/, '');
-    if (site && isProfile(clean) && !socials[site].includes(clean)) {
-      socials[site].push(clean);
-    }
+    // (these sites ignore upper/lower case in profile names). Facebook's profile.php needs its ?id=.
+    const path = url.pathname.toLowerCase().replace(/\/+$/, '');
+    const clean = `https://www.${url.hostname.replace(/^(www|m|web)\./, '')}${path}${path === '/profile.php' ? url.search : ''}`;
+    if (!socials[site].includes(clean)) socials[site].push(clean);
   }
   return socials;
 }
 
-// Skip share buttons, posts, tracking pixels etc.; keep links that point at a profile or page.
-function isProfile(url: string): boolean {
-  const first = new URL(url).pathname.split('/')[1].toLowerCase();
+// Keep links to a profile or page; skip posts, share buttons, tracking pixels, and paths that can't be a
+// profile name (all digits like "2008", or odd characters).
+function isProfile(path: string): boolean {
+  const first = path.split('/')[1].toLowerCase();
   const notProfiles = ['p', 'reel', 'reels', 'explore', 'accounts', 'stories', 'tv', 'sharer', 'sharer.php', 'share', 'share.php', 'dialog', 'plugins', 'tr', 'login', 'login.php', 'help', 'policies', 'legal', 'privacy'];
-  return first !== '' && !notProfiles.includes(first);
+  return /^[\w.-]+$/.test(first) && !/^\d+$/.test(first) && !notProfiles.includes(first);
 }
