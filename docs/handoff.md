@@ -1,53 +1,31 @@
-# Handoff — 2026-11-17
+# Handoff — 2026-11-19
 
-Read this first if the Claude session ended. Full original brief: `docs/team-brief.md`. Status + decision log: `docs/README.md`.
+Read this first when restarting the team. Original brief: `docs/team-brief.md`. Decision log: `docs/README.md`. Work log: `docs/overnight-log.md` (local only, never commit: it has real venue names/addresses).
 
-## How the team ran
-- Main Claude session = coordinator (relays between owner and agents).
-- Background agents: **lead** (plans, docs, research), **dev** (owns frontend code), **discovery-strategist** (interviews, playbook, scoring). Blind test agents are started fresh per run and never see interviews.
-- Rules that stuck:
-  - dev shows each code change (file, lines, before/after) and waits for the owner's yes.
-  - Only the owner creates accounts/keys and approves anything paid.
-  - No git writes by agents.
-- To restart: start lead, dev and discovery-strategist from `docs/team-brief.md` + this file.
+## Team
+- Main Claude session = coordinator (relays between owner and agents; agents address it as "team-lead").
+- **lead**: plans, reviews every commit, keeps docs/README.md + overnight-log.md, sends the owner short plans and "ready to try" notes.
+- **dev**: full-stack (frontend Angular + backend Node). Shows each change for review; commits by file name on `dev`.
+- **discovery-strategist**: the "brain" — interviews, strategy, blind-city tests the owner scores. No code.
 
-## Frontend (frontend/salsa-search)
-Done:
-- Full-page Google map.
-- Floating search bar with city/region suggestions (Places API (New), `AutocompleteSuggestion`, session tokens, arrow keys, `fitBounds` to the place's viewport).
-- Search covers towns, states, counties, lakes and informal areas.
-- Dice button (`src/features/dice-button/`) picks a random city from `src/app/lucky-cities.json`.
+## Rules that stuck
+- Owner approves anything paid, any new direction, keys/accounts. Owner edits `.env` files; agents tell them the line.
+- Never commit: `.env`, `docs/brain/`, `docs/overnight-log.md`, scraped content.
+- No Google content (names, addresses, ratings, reviews) in code, tests, comments, docs or commit messages — only place IDs and invented examples.
+- No git history rewrites/force-push without the owner. Repo `tymicruz/salsa-search` is PUBLIC (owner hasn't decided to make it private).
+- Fixes must be general, never tuned to one city (Puerto Escondido is not a benchmark).
+- Owner wants concise answers; explain new Angular pieces in one line; simplest code.
+- Usage: the Claude 5-hour limit has been hit repeatedly. Keep messages short, avoid idle chatter, don't re-run expensive tests without need.
 
-Open:
-- Optional cleanup: `center`/`zoom` signals in `app.ts` are only the starting view and could be plain values (owner hasn't decided).
-- Markers/venue details wait for the discovery work.
+## What works (on `dev`, last commit 17e4d90)
+- **Frontend** (`frontend/salsa-search`, `ng serve` → :4200): map, city search, dice; Google Places text search (2 queries: classes + dance school, with websiteUri); SalsaVida MCP events resolved by city + country (retry once, visible error, city→province fallback); per-SalsaVida-venue Google lookups for pins; AI-merged venues swap in after the raw list; background website/Instagram evidence check (15 slots, 3 reserved for AI "not salsa" places); no-evidence places hidden; quotes + links in details.
+- **Backend** (`backend`, `npm run dev` → :3000, `npm test` = 45 address tests):
+  - `/synthesize`: one LLM call merges Google + SalsaVida rows; code enforces merges (≤150 m + shared word or same address), address-first event binding, address-beats-name, word-for-word quotes; schedules copied by code.
+  - `/evidence/website`, `/evidence/instagram` (Apify, `APIFY_MAX_PER_DAY`=30), `/socials`.
+  - LLM providers: `claude-cli` (current default, owner's subscription), `codex-cli` (ChatGPT subscription; same quality, ~35–45% slower). Optional `CLAUDE_EFFORT=low` (~25% faster, not set).
+- Owner keys in `.env` (gitignored): Maps key (frontend), APIFY_TOKEN, LLM_PROVIDER.
 
-## Discovery engine ("brain") — docs/brain/
-- Interviews: Cali (complete), Puerto Escondido, Cusco, Mexico City, `owner-workflows.md`.
-- `strategy-library.md`: the playbook. On hold; change it only with real data, and only with general lessons.
-- `city-data-model.md`: Places (towns + areas), venues, events, sources, verification.
-- Pilots:
-  - Blind Puerto Escondido test: `puerto-escondido.md`, scored in `puerto-escondido-score.md`. Found 4/5 places, missed the main school, mislabeled one club.
-  - Browser tests: `puerto-escondido-browser.md`, `ho-chi-minh-city-browser.md`.
-- **Rule:** Puerto Escondido is no longer a benchmark (overfitting). Future tests use blind cities the owner scores.
-
-## Core problem: getting raw data
-Details: `docs/research/data-sources.md` (newest) and `docs/brain/data-access.md`.
-- **Gemini Google Search grounding is NOT usable as a pipeline.** Its terms allow showing results only to the asker: no storing, analyzing or crawling. It's only usable as a live "ask about this city" feature.
-- **Top routes:**
-  1. Google Places text search (store place IDs only) plus venue websites.
-  2. Apify instagram-profile-scraper: bio plus 12 latest posts with isPinned, ~$0.08/city; $5/month free credit. Highlights need a separate tool and come back as images only.
-  3. OpenAI web search for discovery ($10 per 1k); Reddit coverage untested.
-- **Reddit:** unsolved. The official API is closing (no new requests since 2026-10-31).
-- **Ruled out:** Facebook events, Eventbrite, Meetup.
-- **Google reviews:** Places API, 5 per place, live display only; can't be stored.
-- **Other design docs:** `docs/brain/synthesis-method.md` (raw → clean data), `docs/product/map-ux.md` (map/app design + 8 dev steps).
-
-## Next steps (each needs the owner's yes)
-- **Small blind-city test:** Google Places finds schools/venues → Apify pulls their Instagram profiles → owner scores. Needs a free Apify account (owner creates it; token goes in `.env`).
-- **Answer the open questions** in map-ux.md and synthesis-method.md.
-- **Browser** (Claude desktop app or Claude in Chrome) as ground truth.
-
-## Other
-- GitHub: `gh` is installed; owner must run `gh auth login`, then create a private repo `salsa-search` and push.
-- Future idea: research cities on demand, show "as of [date]", and refresh stale data in the background (stale-while-revalidate).
+## Open / next
+1. Recheck Medellín after 17e4d90: Timbalé should show its own name (not a preschool's); report wrong pins and hidden counts. Then send the owner a "ready to try" note.
+2. Owner decisions pending: switch to codex-cli to save Claude usage; email SalsaVida about using event-page coordinates (draft in chat); make the repo private.
+3. Later: add "escuela de baile" query once evidence filtering proves itself; reading text in flyer images; SQLite cache of verified facts (only after evidence visibly improves quality); Facebook later.
