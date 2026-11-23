@@ -1,14 +1,18 @@
-// Evidence that a venue really offers salsa, from its own website and Instagram. Nothing is stored.
+// Evidence that a venue really offers salsa, from its own website and Instagram. AI answers and
+// Instagram profiles are remembered in cache.ts, so a repeat check of an unchanged page skips them.
 // The LLM only reads the pages we fetched and lists facts; code keeps a fact only if its quote is copied word for
 // word from that page, and code (not the LLM) decides each venue's verdict:
 //   evidence         -> at least one salsa fact for adults (or not stated as kids-only): show the venue
 //   no_evidence      -> its pages were read and say nothing about salsa for adults: hide the venue
 //   needs_instagram  -> the website had no salsa facts but links an Instagram: check that before hiding
 //   not_checked      -> nothing could be read (no website, unreachable, robots.txt, daily limit): keep as today
-import { askLLM } from './llm.ts';
+import { openCache, sha256 } from './cache.ts';
+import { askLLM, llmSetup } from './llm.ts';
 import { fetchPage, socialSite } from './fetchPage.ts';
 import { norm } from './matching.ts';
 import { socialLinks } from './socials.ts';
+
+const cache = openCache(process.env.CACHE_FILE || 'data/cache.db');
 
 export interface Fact {
   kind: 'class' | 'social' | 'live_music' | 'mention'; // mention = says it offers salsa, no details
@@ -154,17 +158,43 @@ export async function instagramEvidence(venues: { venueKey: string; instagramUrl
   const today = new Date().toISOString().slice(0, 10);
   if (usedToday.date !== today) Object.assign(usedToday, { date: today, count: 0 });
   const allowed = Math.max(0, (Number(process.env.APIFY_MAX_PER_DAY) || 30) - usedToday.count);
-  const toScrape = venues.slice(0, allowed);
-  const overLimit = venues.slice(allowed);
 
+  // Profiles scraped in the last 30 days come from the cache (null = Apify didn't find it); only the rest go to
+  // Apify and count for the day. Each scrape is paid, so a profile is never scraped twice in that time.
   const byHandle = new Map<string, any>();
+  for (const v of venues) {
+    const saved = cache.get('instagram:' + handleOf(v.instagramUrl), 30);
+    if (saved) byHandle.set(handleOf(v.instagramUrl), JSON.parse(saved));
+  }
+  if (byHandle.size) console.log(`[cache] ${byHandle.size} Instagram profiles reused`);
+  const missing = venues.filter((v) => !byHandle.has(handleOf(v.instagramUrl)));
+  const toScrape = missing.slice(0, allowed);
+  const overLimit = missing.slice(allowed);
   if (toScrape.length) {
     usedToday.count += toScrape.length;
-    for (const p of await runApify(toScrape.map((v) => handleOf(v.instagramUrl)))) byHandle.set(String(p.username).toLowerCase(), p);
+    for (const p of await runApify(toScrape.map((v) => handleOf(v.instagramUrl)))) {
+      // Only the fields we use are kept.
+      const profile = {
+        username: p.username,
+        biography: p.biography,
+        latestPosts: (p.latestPosts ?? []).map((x: any) => ({ url: x.url, caption: x.caption, timestamp: x.timestamp })),
+      };
+      const handle = String(p.username).toLowerCase();
+      byHandle.set(handle, profile);
+      cache.set('instagram:' + handle, JSON.stringify(profile));
+    }
+    for (const v of toScrape) {
+      const handle = handleOf(v.instagramUrl);
+      if (!byHandle.has(handle)) {
+        byHandle.set(handle, null);
+        cache.set('instagram:' + handle, 'null');
+      }
+    }
   }
+  const toRead = venues.filter((v) => !overLimit.includes(v)); // from the cache or just scraped
 
   // Texts per venue: the bio and each caption, with the URL a quote would link to.
-  const read = toScrape.map((v) => {
+  const read = toRead.map((v) => {
     const p = byHandle.get(handleOf(v.instagramUrl));
     const posts: any[] = p?.latestPosts ?? [];
     const texts = [
@@ -230,7 +260,9 @@ async function factsPerVenue(venues: { key: string; texts: { url: string; text: 
 // Each venue's texts (pages or bio/captions) -> salsa facts with exact quotes.
 // Code keeps a fact only if its quote appears word for word in the text it names.
 async function extractFacts(venues: { key: string; texts: { url: string; text: string }[] }[]): Promise<Map<string, Fact[]>> {
-  const input = venues.map((v) => ({ venueKey: v.key, texts: v.texts.map((t) => ({ url: t.url, text: t.text.slice(0, TEXT_PER_PAGE) })) }));
+  // Texts are numbered instead of sent with their URL, so saved answers hold no URLs (a website URL comes from
+  // Google); code maps the number back to the URL.
+  const input = venues.map((v) => ({ venueKey: v.key, texts: v.texts.map((t, i) => ({ source: i, text: t.text.slice(0, TEXT_PER_PAGE) })) }));
   const prompt = `You read texts from venues' own websites or Instagram and list facts about SALSA dancing only.
 Use ONLY these texts. Never use outside knowledge and never guess.
 
@@ -241,28 +273,28 @@ For each venue, list each salsa fact:
 - audience: "kids" if the salsa offer is only for children or teens, "adults" if it says adults or all ages, else "unclear"
 - day, time, price: only if written in the text, else ""
 - quote: the exact words copied from the text (at most 25 words) that show the fact
-- sourceUrl: the url of the text the quote is from
+- source: the number of the text the quote is from
 If a venue's texts say nothing about salsa, return no facts for it.
 
-Return JSON only: {"results":[{"venueKey":"","facts":[{"kind":"","dance":"salsa","audience":"","day":"","time":"","price":"","quote":"","sourceUrl":""}]}]}
+Return JSON only: {"results":[{"venueKey":"","facts":[{"kind":"","dance":"salsa","audience":"","day":"","time":"","price":"","quote":"","source":0}]}]}
 
 Texts:
 ${JSON.stringify(input)}`;
 
-  const answer = JSON.parse(await askLLM(prompt));
+  const answer = JSON.parse(await askLLMRemembered(prompt));
   const facts = new Map<string, Fact[]>();
   let dropped = 0;
   for (const v of venues) {
     const proposed: any[] = answer.results?.find((r: any) => r.venueKey === v.key)?.facts ?? [];
     const kept = proposed.filter((f) => {
-      const source = v.texts.find((t) => t.url === f.sourceUrl);
+      const source = v.texts[f.source];
       const ok = f.dance === 'salsa' && !!f.quote && !!source && squash(source.text.slice(0, TEXT_PER_PAGE)).includes(squash(f.quote));
       if (!ok) dropped++;
       return ok;
     });
     facts.set(v.key, kept.map((f) => {
       // Time and price must also be written in that text, or they're left empty (no invented details).
-      const source = squash(v.texts.find((t) => t.url === f.sourceUrl)!.text.slice(0, TEXT_PER_PAGE));
+      const source = squash(v.texts[f.source].text.slice(0, TEXT_PER_PAGE));
       const ifWritten = (value: unknown) => (value && source.includes(squash(String(value))) ? String(value) : '');
       return {
         kind: ['class', 'social', 'live_music', 'mention'].includes(f.kind) ? f.kind : 'mention',
@@ -272,7 +304,7 @@ ${JSON.stringify(input)}`;
         time: ifWritten(f.time),
         price: ifWritten(f.price),
         quote: String(f.quote),
-        sourceUrl: f.sourceUrl,
+        sourceUrl: v.texts[f.source].url,
       };
     }));
   }
@@ -312,4 +344,19 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
+}
+
+// The same prompt to the same model within 30 days reuses the saved answer. Any change to the page text, the
+// prompt or the model makes a new key, so the AI runs again. Only answers that parse as JSON are saved.
+async function askLLMRemembered(prompt: string): Promise<string> {
+  const key = 'llm:' + sha256(llmSetup() + '\n' + prompt);
+  const saved = cache.get(key, 30);
+  if (saved) {
+    console.log('[cache] AI answer reused');
+    return saved;
+  }
+  const answer = await askLLM(prompt);
+  JSON.parse(answer);
+  cache.set(key, answer);
+  return answer;
 }

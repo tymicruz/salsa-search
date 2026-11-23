@@ -1,6 +1,6 @@
 # Salsa Search backend
 
-A small Node + TypeScript API used by the Angular app. It stores nothing: no database, no cache.
+A small Node + TypeScript API used by the Angular app. It stores no Google content. The website / Instagram checks remember their AI answers (30 days, keyed by a hash of the exact prompt + model) and Instagram profiles, including ones Apify couldn't find (30 days) in `data/cache.db`, a SQLite file (`src/cache.ts`, gitignored). Deleting it is always safe; `CACHE_FILE` changes its path.
 
 - **Express**: the most common Node web framework, so tutorials and answers are easy to find.
 - **No build step**: Node 24 runs `.ts` files directly (it strips the types). `npm run check` runs `tsc` to type-check.

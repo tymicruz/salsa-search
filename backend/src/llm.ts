@@ -22,6 +22,13 @@ export async function askLLM(prompt: string): Promise<string> {
   return askClaudeCli(prompt); // claude-cli, the default
 }
 
+// Which model answers, as one string (provider + model + effort settings). cache.ts keys saved answers by it,
+// so switching models never reuses another model's answers.
+export function llmSetup(): string {
+  const keys = ['LLM_PROVIDER', 'CLAUDE_MODEL', 'CLAUDE_EFFORT', 'CODEX_MODEL', 'CODEX_EFFORT', 'GEMINI_MODEL', 'OPENAI_MODEL'];
+  return keys.map((k) => process.env[k] ?? '').join('|');
+}
+
 // Paid-tier prices in USD per 1M tokens, only used for the logged estimate. Update them if the model changes.
 // Gemini: https://ai.google.dev/gemini-api/docs/pricing   OpenAI: https://developers.openai.com/api/docs/pricing
 const PRICES = {
