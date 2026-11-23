@@ -7,5 +7,6 @@ import { PIN_STYLES } from '../../app/venue';
   templateUrl: './map-legend.html',
 })
 export class MapLegend {
-  protected styles = Object.values(PIN_STYLES); // the pin types as a list, for @for
+  // The pin types as a list, for @for. No grey "unknown": those venues are hidden.
+  protected styles = Object.values(PIN_STYLES).filter((s) => s !== PIN_STYLES.unknown);
 }
