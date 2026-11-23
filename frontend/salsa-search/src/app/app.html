@@ -39,7 +39,7 @@
 
   <!-- Bottom right: pin color legend, and the mini calendar under it (src/features/week-strip). -->
   <div class="absolute bottom-6 right-4 z-10 flex flex-col items-end gap-2">
-    <app-map-legend />
+    <app-map-legend [unconfirmedCount]="unconfirmedCount()" [(showUnconfirmed)]="showUnconfirmed" />
     <app-week-strip
       [pinnedDay]="pinnedDay()"
       (hoverDay)="hoverDay.set($event)"

@@ -17,12 +17,13 @@ export async function synthesizeVenues(area: string, places: Place[], events: Sa
   const { venues, notSalsaVenues = [] } = await post('/synthesize', body);
 
   // The backend's schedule items have no "venue" field; ours do, so fill it with the venue's name.
-  // The website comes from the venue's first Google place (the backend doesn't return it).
+  // The website and main type come from the venue's first Google place (the backend doesn't return them).
   const toVenue = (v: Venue, doubted: boolean): Venue => ({
     ...v,
     hosts: v.hosts ?? [],
     googleMapsUri: v.googleMapsUri ?? '',
     website: places.find((p) => p.id === v.placeIds[0])?.website ?? '',
+    primaryType: places.find((p) => p.id === v.placeIds[0])?.primaryType ?? '',
     evidence: v.evidence ?? [],
     schedule: v.schedule.map((item) => ({ ...item, venue: v.name })),
     doubted,

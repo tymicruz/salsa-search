@@ -327,6 +327,7 @@ function newVenue(id: string, name: string, place?: Place): Venue {
     lng: place?.lng,
     googleMapsUri: place?.googleMapsUri ?? '',
     website: place?.website ?? '',
+    primaryType: place?.primaryType ?? '',
     schedule: [],
     evidence: [],
   };

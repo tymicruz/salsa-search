@@ -48,6 +48,7 @@ export interface Venue {
   lng?: number;
   googleMapsUri: string;
   website: string; // the first Google place's website ('' if none)
+  primaryType: string; // the first Google place's main type, e.g. "dance_school" ('' if none)
   schedule: SalsaEvent[]; // copied from SalsaVida, never written by the AI
   evidence: { quote: string; source: string }[]; // short quotes the AI based its answer on
   check?: EvidenceCheck; // the backend's check of its website / Instagram; missing = not checked yet
@@ -93,8 +94,24 @@ export const PIN_STYLES: Record<PinType, { color: string; letter: string; label:
   social: { color: '#d93025', letter: 'S', label: 'Socials (partner dancing)' },
   both: { color: '#9334e6', letter: 'CS', label: 'Classes and socials' },
   music: { color: '#e37400', letter: '♪', label: 'Salsa music, no dancing found' },
-  unknown: { color: '#80868b', letter: '?', label: 'Unknown' },
+  unknown: { color: '#80868b', letter: '?', label: 'Details unknown' },
 };
+
+// Where a venue shows up:
+//   shown       -> it has a schedule or a color, or its own website / Instagram proved salsa
+//   unconfirmed -> grey and never disproved, but a dance school (Google or the AI says so): only with the toggle
+//   hidden      -> its own website / Instagram showed no salsa (or only kids' salsa), the AI doubted it with no
+//                  proof, or it's grey and not a school (restaurants, bars, hostels...)
+export function visibility(venue: Venue): 'shown' | 'unconfirmed' | 'hidden' {
+  const verdict = venue.check?.verdict;
+  if (verdict === 'no_evidence') return 'hidden';
+  if (verdict === 'evidence') return 'shown';
+  if (venue.doubted) return 'hidden';
+  if (pinType(venue) !== 'unknown') return 'shown';
+  const school =
+    ['salsa_school', 'social_venue'].includes(venue.category) || ['dance_school', 'sports_school'].includes(venue.primaryType);
+  return school ? 'unconfirmed' : 'hidden';
+}
 
 // Does the venue have anything on this weekday? (null = no day chosen, so yes.)
 export function hasDay(venue: Venue, day: number | null) {

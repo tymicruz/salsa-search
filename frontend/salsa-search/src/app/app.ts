@@ -13,6 +13,7 @@ import {
   Place,
   PIN_STYLES,
   pinType,
+  visibility,
   SalsaEvent,
   SocialLinks,
   Venue,
@@ -54,16 +55,11 @@ export class App {
   protected links = signal<Record<string, SocialLinks | 'loading' | 'error'>>({});
   protected checking = signal<string[]>([]); // IDs of venues whose website / Instagram is being checked now
 
-  // Hidden everywhere: grey "unknown" venues (no schedule and no salsa found yet; they appear once a check
-  // finds some), venues whose own website / Instagram showed no salsa (or only kids' salsa), and venues the
-  // AI doubted ("not salsa") unless their website / Instagram proved salsa.
+  // Which venues show (see visibility() in venue.ts). Unconfirmed dance schools only with the legend's toggle.
+  protected showUnconfirmed = signal(false);
+  protected unconfirmedCount = computed(() => this.venues().filter((v) => visibility(v) === 'unconfirmed').length);
   private shownVenues = computed(() =>
-    this.venues().filter(
-      (v) =>
-        pinType(v) !== 'unknown' &&
-        v.check?.verdict !== 'no_evidence' &&
-        (!v.doubted || v.check?.verdict === 'evidence'),
-    ),
+    this.venues().filter((v) => visibility(v) === 'shown' || (this.showUnconfirmed() && visibility(v) === 'unconfirmed')),
   );
 
   protected selectedId = signal<string | null>(null); // the clicked pin / list row
