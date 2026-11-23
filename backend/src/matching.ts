@@ -232,7 +232,10 @@ export function acceptLookups(places: RawPlace[], events: RawEvent[]): RawPlace[
     } else if (nameBindable(e, p)) {
       kept.push(p);
       counts.name++;
-    } else if (!hasStreetNumber(e.address) && distinctiveWord(e.venue, p.name, allNames)) {
+    } else if (!hasStreetNumber(e.address) && distinctiveWord(`${e.venue} ${e.address?.split(',')[0] ?? ''}`, p.name, allNames)) {
+      // The rare word can be in the venue's name or in the address part before the first comma, which often names
+      // the building it's in ("Club X Hotel Ejemplo, Av. Central" -> a hit called "Hotel Ejemplo"). The street
+      // after the comma never counts, so "Bar Central" isn't kept for "Av. Central".
       distinctiveHits.set(e.id, [...(distinctiveHits.get(e.id) ?? []), p]);
     }
   }

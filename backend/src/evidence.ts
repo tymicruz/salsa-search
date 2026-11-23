@@ -10,7 +10,7 @@ import { openCache, sha256 } from './cache.ts';
 import { askLLM, llmSetup } from './llm.ts';
 import { fetchPage, socialSite } from './fetchPage.ts';
 import { norm } from './matching.ts';
-import { socialLinks } from './socials.ts';
+import { socialLinks, socialProfile } from './socials.ts';
 
 const cache = openCache(process.env.CACHE_FILE || 'data/cache.db');
 
@@ -80,7 +80,7 @@ async function readVenueSite(v: WebsiteRequest) {
     let url = v.websiteUrl;
     if (!url && v.salsavidaUrls?.length) ({ url, instagramUrl } = await siteFromSalsaVida(v.salsavidaUrls[0]));
     if (url && socialSite(url)) {
-      if (socialSite(url) === 'instagram') instagramUrl = url; // the "website" is an Instagram profile
+      if (socialSite(url) === 'instagram') instagramUrl = socialProfile(url)?.url; // the "website" is an Instagram profile
       url = undefined;
       problem = 'website is a social page';
     }

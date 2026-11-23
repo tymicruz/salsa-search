@@ -10,7 +10,7 @@
   @if (unconfirmedCount()) {
     <label class="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200 cursor-pointer">
       <input type="checkbox" [checked]="showUnconfirmed()" (change)="showUnconfirmed.set(!showUnconfirmed())" />
-      Show unconfirmed schools ({{ unconfirmedCount() }})
+      Show grey places ({{ unconfirmedCount() }})
     </label>
   }
 </div>

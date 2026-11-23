@@ -1,5 +1,5 @@
 // Calls to our own backend (backend/, see backend/README.md). It runs on the owner's machine during development.
-import { EvidenceCheck, Place, SalsaEvent, SocialLinks, Venue } from './venue';
+import { EvidenceCheck, offersFromSchedule, Place, SalsaEvent, SocialLinks, Venue } from './venue';
 
 const BACKEND_URL = 'http://localhost:3000';
 
@@ -26,6 +26,7 @@ export async function synthesizeVenues(area: string, places: Place[], events: Sa
     primaryType: places.find((p) => p.id === v.placeIds[0])?.primaryType ?? '',
     evidence: v.evidence ?? [],
     schedule: v.schedule.map((item) => ({ ...item, venue: v.name })),
+    offers: [...new Set([...v.offers, ...offersFromSchedule(v.schedule)])], // SalsaVida's own kinds always count
     doubted,
   });
   return [...venues.map((v: Venue) => toVenue(v, false)), ...notSalsaVenues.map((v: Venue) => toVenue(v, true))];

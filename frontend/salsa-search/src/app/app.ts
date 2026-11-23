@@ -55,7 +55,7 @@ export class App {
   protected links = signal<Record<string, SocialLinks | 'loading' | 'error'>>({});
   protected checking = signal<string[]>([]); // IDs of venues whose website / Instagram is being checked now
 
-  // Which venues show (see visibility() in venue.ts). Unconfirmed dance schools only with the legend's toggle.
+  // Which venues show (see visibility() in venue.ts). Grey "unconfirmed" ones only with the legend's toggle.
   protected showUnconfirmed = signal(false);
   protected unconfirmedCount = computed(() => this.venues().filter((v) => visibility(v) === 'unconfirmed').length);
   private shownVenues = computed(() =>

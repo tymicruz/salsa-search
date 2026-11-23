@@ -109,3 +109,13 @@ test('no-number fallback: a generic or short shared word is not enough', () => {
   const kept = acceptLookups([place('H1', 'Latino Grill', 'Cl. 50 #60-70, Ciudad', 7)], [e]);
   assert.deepEqual(kept.map((p) => p.id), []);
 });
+test('no-number fallback: the address names the building the venue is in', () => {
+  const e = event(7, 'Club Sabroso', 'Club Sabroso Hotel Miramundo, Avenida Central Ciudad');
+  const kept = acceptLookups([place('H1', 'Hotel Miramundo', 'Av. Central, Ciudad', 7)], [e]);
+  assert.deepEqual(kept.map((p) => p.id), ['H1']);
+});
+test('no-number fallback: a word from the street (after the first comma) is not enough', () => {
+  const e = event(7, 'Club Sabroso', 'Club Sabroso Hotel Miramundo, Avenida Miraflores Ciudad');
+  const kept = acceptLookups([place('H1', 'Bar Miraflores', 'Av. Miraflores, Ciudad', 7)], [e]);
+  assert.deepEqual(kept.map((p) => p.id), []);
+});

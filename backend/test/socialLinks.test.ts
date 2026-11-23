@@ -1,7 +1,7 @@
 // socialLinks(): only real profile links from href attributes. The HTML is MADE UP.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { socialLinks } from '../src/socials.ts';
+import { socialLinks, socialProfile } from '../src/socials.ts';
 
 test('keeps profile links from hrefs, once each', () => {
   const html = `
@@ -20,4 +20,9 @@ test('keeps profile links from hrefs, once each', () => {
     facebook: ['https://www.facebook.com/profile.php?id=123&ref=x'],
     linktree: ['https://www.linktr.ee/ejemplo'],
   });
+});
+
+test('cleans a profile URL given as a website', () => {
+  assert.equal(socialProfile('https://instagram.com//Escuela.Ejemplo/?igsh=abc')?.url, 'https://www.instagram.com/escuela.ejemplo');
+  assert.equal(socialProfile('https://www.instagram.com/'), undefined);
 });

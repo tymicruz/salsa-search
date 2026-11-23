@@ -98,19 +98,19 @@ export const PIN_STYLES: Record<PinType, { color: string; letter: string; label:
 };
 
 // Where a venue shows up:
-//   shown       -> it has a schedule or a color, or its own website / Instagram proved salsa
-//   unconfirmed -> grey and never disproved, but a dance school (Google or the AI says so): only with the toggle
+//   shown       -> it has a schedule or a color (classes, socials, music)
+//   unconfirmed -> grey, never disproved, and either its own site mentions salsa with no details or it's a dance
+//                  school (Google or the AI says so) nothing has checked: only with the legend's toggle
 //   hidden      -> its own website / Instagram showed no salsa (or only kids' salsa), the AI doubted it with no
 //                  proof, or it's grey and not a school (restaurants, bars, hostels...)
 export function visibility(venue: Venue): 'shown' | 'unconfirmed' | 'hidden' {
   const verdict = venue.check?.verdict;
   if (verdict === 'no_evidence') return 'hidden';
-  if (verdict === 'evidence') return 'shown';
-  if (venue.doubted) return 'hidden';
+  if (venue.doubted && verdict !== 'evidence') return 'hidden';
   if (pinType(venue) !== 'unknown') return 'shown';
   const school =
     ['salsa_school', 'social_venue'].includes(venue.category) || ['dance_school', 'sports_school'].includes(venue.primaryType);
-  return school ? 'unconfirmed' : 'hidden';
+  return verdict === 'evidence' || school ? 'unconfirmed' : 'hidden';
 }
 
 // Does the venue have anything on this weekday? (null = no day chosen, so yes.)
