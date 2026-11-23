@@ -98,8 +98,19 @@
       <p class="w-fit mt-2 px-3 py-1 rounded bg-white shadow-md text-sm text-red-600">{{ message() }}</p>
     }
 
+    <!-- Hides / shows the list below, for more map. -->
+    <button
+      type="button"
+      (click)="listOpen.set(!listOpen())"
+      class="flex items-center gap-1 mt-3 pl-2 pr-3 py-1 rounded-full bg-white shadow-md text-xs font-medium text-[#1a73e8] cursor-pointer hover:bg-gray-50"
+    >
+      <span class="material-symbols-outlined">{{ listOpen() ? 'expand_less' : 'expand_more' }}</span>
+      {{ listOpen() ? 'Hide list' : 'Show list (' + venuesInView().length + ')' }}
+    </button>
+
     <!-- Places in view, like Google Maps' results list (src/features/venue-list). -->
     <app-venue-list
+      [class.hidden]="!listOpen()"
       class="block mt-3"
       [venues]="venuesInView()"
       [selectedId]="selectedId()"

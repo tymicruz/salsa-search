@@ -63,6 +63,7 @@ export class App {
   );
 
   protected selectedId = signal<string | null>(null); // the clicked pin / list row
+  protected listOpen = signal(true); // the left list; hidden = more room for the map
   private bounds = signal<google.maps.LatLngBounds | null>(null); // the area the map shows
 
   // Weekday filter from the mini calendar (0 = Sunday ... 6 = Saturday, null = all days).
@@ -237,6 +238,7 @@ export class App {
       return;
     }
     this.selectedId.set(venue.id);
+    this.listOpen.set(true); // the clicked place's details are in the list
     if (venue.lat !== undefined) {
       this.map().panTo({ lat: venue.lat, lng: venue.lng! });
     }
